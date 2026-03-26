@@ -358,21 +358,21 @@ OMSM_Extract_Posts <- function(
   posts.zoops.long <- list(
     f = list(
       samples = melt(posts.zoops$f$samples, 
-                     id.vars = Variables, value.name = "f", variable.name = "Source"),
+                     id.vars = Variables, value.name = "Value", variable.name = "Param"),
       thin = melt(posts.zoops$f$thin, 
-                  id.vars = Variables, value.name = "f", variable.name = "Source"),
+                  id.vars = Variables, value.name = "Value", variable.name = "Param"),
       HDI95 = melt(posts.zoops$f$HDI95, 
-                   id.vars = Variables, value.name = "f", variable.name = "Source"),
+                   id.vars = Variables, value.name = "Value", variable.name = "Param"),
       HDI90 = melt(posts.zoops$f$HDI90, 
-                   id.vars = Variables, value.name = "f", variable.name = "Source"),
+                   id.vars = Variables, value.name = "Value", variable.name = "Param"),
       HDI75 = melt(posts.zoops$f$HDI75, 
-                   id.vars = Variables, value.name = "f", variable.name = "Source"),
+                   id.vars = Variables, value.name = "Value", variable.name = "Param"),
       HDI50 = melt(posts.zoops$f$HDI50, 
-                   id.vars = Variables, value.name = "f", variable.name = "Source"),
+                   id.vars = Variables, value.name = "Value", variable.name = "Param"),
       mean = melt(posts.zoops$f$mean, 
-                  id.vars = Variables, value.name = "f", variable.name = "Source"),
+                  id.vars = Variables, value.name = "Value", variable.name = "Param"),
       mode = melt(posts.zoops$f$mode, 
-                  id.vars = Variables, value.name = "f", variable.name = "Source")
+                  id.vars = Variables, value.name = "Value", variable.name = "Param")
     ),
     trophic = list(
       samples = melt(posts.zoops$trophic$samples, 
