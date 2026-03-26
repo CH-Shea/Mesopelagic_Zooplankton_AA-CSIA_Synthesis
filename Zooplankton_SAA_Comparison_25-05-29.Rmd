@@ -1,0 +1,1723 @@
+---
+title: Comparing $\Large \mathrm{\delta^{15}N_{SAA}}$ values at all locations
+author: "Connor Shea"
+date: "`r format(Sys.Date(), '%B %d, %Y')`"
+output: 
+  #html_document: 
+  bookdown::html_document2:  
+    self-contained: yes
+    theme: cerulean #paper #cosmo #journal #readable
+    toc: true
+    smooth_scroll: true
+    toc_depth: 3
+    toc_float: true
+    number_sections: true
+    fig_caption: yes
+    code_folding: hide
+link-citations: yes
+---
+
+<style type="text/css">  
+/* Note: CSS uses C-style commenting. */
+h1.title{font-size:22px; text-align:center;}
+h4.author{font-size:16px; text-align:center;}
+h4.date{font-size:16px; text-align:center;}
+body{ /* Normal  */ font-size: 12px}
+td {  /* Table   */ font-size: 12px}
+h1 { /* Header 1 */ font-size: 36px}
+h2 { /* Header 2 */ font-size: 24px}
+h3 { /* Header 3 */ font-size: 18px}
+h4 { /* Header 4 */ font-size: 14px}
+.math{ font-size: 12px;}
+.hi{ /* hanging indents */ 
+    padding-left:22px; 
+    text-indent:-22px;
+}
+blockquote {  
+    padding: 5 5px;
+    margin: 0 0 20px;
+    font-size: 12px;
+    border-left: 5px solid #eee;
+}
+code.r{ /* code */ 
+       font-size: 12px;
+}
+pre{/*preformatted text*/ 
+    font-size: 12px;
+}
+p.caption {/* figure captions */ 
+    font-size: 1.05em;
+    font-style: normal; 
+    #font-weight: bold;
+    font-color: blue;
+    margin-right: 5%;
+    margin-left:  5%;
+    text-align: center;
+} 
+</style>
+
+```{r setup, echo=TRUE, warning=FALSE, message=FALSE, dpi=300}
+rm(list=ls()) # clean up
+
+# fresh start? If FALSE (select 2 in hard bracket), will only rerun a chunk if 
+# changes are detected within the text of that chunk.
+rmCache <- c(TRUE, FALSE)[2] 
+tfn <- knitr::current_input()              # name of this file
+tfn <- substr(tfn, 1, nchar(tfn)-4)        # Remove the ".Rmd"
+tfn_cache <- paste0("Caches/", tfn, "_cache")         # Append "_cache" to it
+tfn_figures <- paste0("Figures/", tfn, "_figures")         # Append "_figures" to it
+if (rmCache) {
+  if (file.exists(tfn_cache))                # If the cache exists...
+    unlink(tfn_cache, recursive=TRUE)        # ...delete it.
+}
+
+## load packages quietly
+shhh <- suppressPackageStartupMessages # It's a library, so shhh!
+want <- c("knitr", 
+          "readxl",
+          "MASS", # some statistics including lda
+          "vegan", # ecology statistics
+          "FactoMineR", # includes PCA function and utilities
+          "factoextra", # extra utilities for FactoMineR
+          "runjags", 
+          "openxlsx",
+          "coda", 
+          "compositions", 
+          "DT",
+          "zeallot", 
+          "magrittr", 
+          "DirichletReg", 
+          "Ternary", 
+          "png",
+          "ggplot2",
+          "ggpubr",
+          "ggrepel", # for non-overlapping text labels on plots
+          "ggstance", #for vertical position dodging
+          "plotly",
+          "gridExtra",
+          "graphics",
+          "reshape2",
+          "dplyr",
+          "effects")
+for (pkg in want) shhh(library(pkg, character.only=TRUE))
+
+
+# set some chunk options
+gr <- (1+sqrt(5))/2 # golden ratio, for figures
+opts_chunk$set(comment="  ",
+               fig.align="center",
+               # out.width="95%",
+               dpi=96, # set to 300 for important figures
+               dev="png", # png, svg, pdf, jpg, tiff
+               #echo=FALSE,
+               cache=c(TRUE, FALSE)[1], 
+               cache.path = paste0(tfn_cache,"/"),
+               fig.path = paste0(tfn_figures,"/"),
+               eval.after="fig.cap", # for dynamic captions
+               collapse=TRUE
+)
+
+
+``` 
+
+\newcommand{\um}{\ \mu \mathrm{ m}}
+\newcommand{\mm}{\mathrm{\ mm}}
+\newcommand{\m}{\mathrm{\ m}}
+\newcommand{\N}{\mathrm{^{15}\text{N}}}
+\newcommand{\dN}{\mathrm{\delta^{15}\text{N}}}
+\newcommand{\dNAA}{\mathrm{\delta^{15}\text{N}_\text{AA}}}
+\newcommand{\dNSAA}{\mathrm{\delta^{15}\text{N}_\text{SAA}}}
+\newcommand{\dNTAA}{\mathrm{\delta^{15}\text{N}_\text{TAA}}}
+\newcommand{\dNtr}{\mathrm{\delta^{15}\text{N}_\text{tr}}}
+\newcommand{\dNsrc}{\mathrm{\delta^{15}\text{N}_\text{src}}}
+\newcommand{\dNPhe}{\mathrm{\delta^{15}N_{Phe}}}
+\newcommand{\dNSer}{\mathrm{\delta^{15}N_{Ser}}}
+\newcommand{\dNGly}{\mathrm{\delta^{15}N_{Gly}}}
+\newcommand{\dNLys}{\mathrm{\delta^{15}N_{Lys}}}
+\newcommand{\dNThr}{\mathrm{\delta^{15}N_{Thr}}}
+\newcommand{\dNAla}{\mathrm{\delta^{15}N_{Ala}}}
+\newcommand{\dNGlx}{\mathrm{\delta^{15}N_{Glx}}}
+\newcommand{\dNAsx}{\mathrm{\delta^{15}N_{Asx}}}
+\newcommand{\dNIle}{\mathrm{\delta^{15}N_{Ile}}}
+\newcommand{\dNLeu}{\mathrm{\delta^{15}N_{Leu}}}
+\newcommand{\dNPro}{\mathrm{\delta^{15}N_{Pro}}}
+\newcommand{\dNThrPhe}{\mathrm{\delta^{15}N_{Thr-Phe}}}
+\newcommand{\dNAlaPhe}{\mathrm{\delta^{15}N_{Ala-Phe}}}
+\newcommand{\dNGlxPhe}{\mathrm{\delta^{15}N_{Glx-Phe}}}
+\newcommand{\dNAsxPhe}{\mathrm{\delta^{15}N_{Asx-Phe}}}
+\newcommand{\dNIlePhe}{\mathrm{\delta^{15}N_{Ile-Phe}}}
+\newcommand{\dNLeuPhe}{\mathrm{\delta^{15}N_{Leu-Phe}}}
+\newcommand{\dNProPhe}{\mathrm{\delta^{15}N_{Pro-Phe}}}
+\newcommand{\C}{\mathrm{^{13}\text{C}}}
+\newcommand{\dC}{\mathrm{\delta^{13}\text{C}}}
+\newcommand{\dCAA}{\mathrm{\delta^{13}\text{C}_\text{AA}}}
+\newcommand{\dCEAA}{\mathrm{\delta^{13}\text{C}_\text{EAA}}}
+\newcommand{\dCNAA}{\mathrm{\delta^{13}\text{C}_\text{NAA}}}
+\newcommand{\permil}{‰}
+\newcommand{\degree}{°}
+\newcommand{\TP}{\mathrm{TP}}
+\newcommand{\TPAla}{\mathrm{TP_{Ala-Phe}}}
+\newcommand{\TPGlx}{\mathrm{TP_{Glx-Phe}}}
+\newcommand{\TPts}{\mathrm{TP_{tr-src}}}
+\newcommand{\dTP}{\mathrm{\Delta TP_{Ala-Glx}}}
+
+# Introduction {-}
+
+The goal of this document is to carry out a systematic assessment of the effect of source amino acid choice on how we interperate organic matter supply to deep-sea food webs.  Hannides et al. 2020, Romero-Romero et al. 2020 and Shea et al. 2023 all use simple, two-source mixing models to assess the relative importance of small and large particles in supplying organic matter to mesopelagic zone food webs across the North Pacific. These mixing models are based on the $\dNSAA$ values of particles and zooplankton, which are calculated as the average $\dN$ value of glycine (Gly), serine (Ser), phenylalanine (Phe), and lysine (Lys). In these studies, the $\dN$ values of these amino acids are treated as conservative tracers exhibiting minimal trophic fractionation during their processing in the zooplankton food web. In a careful meta-analysis of AA-CSIA data, however, McMahon et al. 2016 points out the Ser and Gly do appear to exhibit small but significant fractionation during trophic transfer. By analyzing the data compilation presented in McMahon et al. 2016, we see that marine consumers with $TP=2-3$ have been observed to have  $\Delta^{15}N_{Ser} = 2.6 \pm 3.2$ and $\Delta^{15}N_{Gly} = 2.9 \pm 3.1$. Therefore, the inclusion of $\dNSer$ and $\dNGly$ in the simple mixing models presented in Romero-Romero et al. 2020 and Shea et al. 2023 could have biased mixing model results towards sources of organic matter with characteristically high $\dNSAA$ values, such at small particles.
+
+To address the above concern, we will systematically reanalyze the AA-CSIA data collected at all sites across the North Pacific (5 N, 8 N, Station ALOHA during summer and winter (ALOHA-S and ALOHA-W), and Ocean Station Papa (OSP)), while adding in new data from the North Atlantic spring bloom. We will organize this reanalysis by attempting to answer the following questions:
+
+  (1) Does simply excluding Ser and Gly change data interpretation and mixing model results?
+  (2) Do we see a relationship between source amino acid $\dN$ values and $\TPGlx$ in zooplankton at all sites?
+  (3) Can trophic discrimination alone account for the discrepancies identified in section 1?
+
+# Setup {-}
+
+Here we will be defining the functions and constants we will need to analyze the data, importing data, and then coercing that data into the different formats we need.
+
+## Defining Functions and Parameters {-}
+
+First and foremost, let's gather the parameters that we know we'll need going forward.
+
+```{r def-params}
+
+
+## Defining some groups of amino acids
+
+# all amino acids
+allAA = c("Ala", "Gly", "Thr", "Ser", "Val", "Leu", "Ile", "Pro", "Asx", "Met", "Glx", "Phe", "Tyr", "Lys")
+# columns with SD
+SDallAA <- c("SDAla", "SDGly", "SDThr", "SDSer", "SDVal", "SDLeu", "SDIle", "SDPro", "SDAsx", "SDMet", "SDGlx", "SDPhe", "SDTyr", "SDLys")
+# columns with SD
+SDallAA <- c("SDAla", "SDGly", "SDThr", "SDSer", "SDVal", "SDLeu", "SDIle", "SDPro", "SDAsx", "SDMet", "SDGlx", "SDPhe", "SDTyr", "SDLys")
+# source amino acids
+srcAA = c("Gly","Ser","Phe","Lys") # ALL SRC AA: c("Phe","Met","Tyr","Gly","Ser","Lys")
+# columns with SD
+SDsrcAA = c("SDGly","SDSer","SDPhe","SDLys")
+# columns with SD
+SDsrcAA = c("SDGly","SDSer","SDPhe","SDLys")
+# ALL SRC AA: c("SDPhe","SDMet","SDTyr","SDGly","SDSer","SDLys")
+# trophic amino acids
+trAA = c("Glx", "Asx", "Ala", "Ile", "Leu", "Pro", "Val","Thr")
+# columns with SD
+SDtrAA = c("SDGlx", "SDAsx", "SDAla", "SDIle", "SDLeu", "SDPro", "SDVal","SDThr")
+# columns with SD
+SDtrAA = c("SDGlx", "SDAsx", "SDAla", "SDIle", "SDLeu", "SDPro", "SDVal","SDThr")
+
+# All amino acids - sorted by SAA TAA and Thr
+allAA.ord <- c("Glx", "SDGlx",	"Ala", "SDAla",	"Asx", "SDAsx",	"Ile", "SDIle",	"Leu", "SDLeu",	"Pro", "SDPro",	"Val", "SDVal",	"Ser", "SDSer",	"Gly", "SDGly",	"Tyr", "SDTyr",	"Lys", "SDLys",	"Met", "SDMet",	"Phe", "SDPhe", "Thr", "SDThr")
+
+
+## defining the TDF data from McMahon et al. 2016.
+
+TP.parms = data.frame("AAs"   = c("glx-phe", "ala-phe", "thr-phe", "trp-src"),
+                      "TDF"   = c(7.6      , 5.1      ,-5.8      , 6.3),
+                      "SDTDF" = c(1.2      , 2.1      , 3.2      , 0.9),
+                      "beta"  = c(3.4      , 3.2      ,-2.4      , 2.2),
+                      "SDbeta"= c(0.9      , 1.2      , 0.4      , 0.7)
+                      )
+TDF.McMahon = data.frame("Ala" = 5.9, "SDAla" = 2.8,
+                         "Gly" = 2.4, "SDGly" = 3.4,
+                         "Thr" = -6.2, "SDThr" = 3.4,
+                         "Ser" = 2.5, "SDSer" = 2.7,
+                         "Val" = 4.0, "SDVal" = 2.7,
+                         "Leu" = 5.2, "SDLeu" = 2.5,
+                         "Ile" = 5.1, "SDIle" = 2.4,
+                         "Pro" = 5.8, "SDPro" = 1.7,
+                         "Asx" = 5.4, "SDAsx" = 2.0,
+                         "Met" = 1.6, "SDMet" = 2.6,
+                         "Glx" = 7.8, "SDGlx" = 1.7,
+                         "Phe" = NA, "SDPhe" = NA,
+                         "Tyr" = NA, "SDTyr" = NA,
+                         "Lys" = 0.7, "SDLys" = 1.4)
+
+DN.McMahon = data.frame("Ala" = 6.4, "SDAla" = 2.7,
+                         "Gly" = 2.7, "SDGly" = 3.2,
+                         "Thr" =-5.9, "SDThr" = 3.6,
+                         "Ser" = 3.2, "SDSer" = 2.8,
+                         "Val" = 4.4, "SDVal" = 2.6,
+                         "Leu" = 5.6, "SDLeu" = 2.4,
+                         "Ile" = 5.5, "SDIle" = 2.3,
+                         "Pro" = 6.1, "SDPro" = 1.6,
+                         "Asx" = 5.7, "SDAsx" = 1.9,
+                         "Met" = 2.0, "SDMet" = 2.6,
+                         "Glx" = 8.0, "SDGlx" = 1.7,
+                         "Phe" = 0.3, "SDPhe" = 0.5,
+                         "Tyr" = NA, "SDTyr" = NA,
+                         "Lys" = 1.0, "SDLys" = 1.3)
+
+Locs <- c("5N","8N","ALOHA-S","ALOHA-W","OSP")
+```
+
+Next let's define the functions we will need to analyze this data. The most significant of these will definitely be the two-end member mixing model code.
+
+```{r def-funcs}
+
+# defining function to propagate uncertainty for mean calculations
+# defining function to propagate uncertainty for mean calculations
+SDmean <- function(data, na.rm = FALSE)
+{
+  if (prod(!is.na(data)) == 1) {
+    squareds = data^2
+    sumofsquareds = sum(squareds)
+    root = sqrt(sumofsquareds)
+    SD = root/length(as.double(data))
+    return(SD)
+  } else { if (na.rm == TRUE) {
+    data = na.omit(data)
+    squareds = data^2
+    sumofsquareds = sum(squareds)
+    root = sqrt(sumofsquareds)
+    SD = root/length(data)
+    return(SD)
+  } else {
+    return(NA)
+  }
+  }
+}
+
+## defining a function to propagate error through summing calculations
+SDsum <- function(data)
+{
+   if (is.numeric(data) == TRUE) {
+        squareds = data^2
+        sumofsquareds = sum(squareds)
+        root = sqrt(sumofsquareds)
+        SD = root
+        return(SD)
+    } else {
+        return(NA)
+    }
+}
+
+# defining a function to solve a single-tracer, two-source mixing model
+TwoSrcMM <- function(Mix, SDMix, nMix, SrcA, SDSrcA, nSrcA, SrcB, SDSrcB, nSrcB){
+  # Calculating standard errors
+  seMix <- SDMix/sqrt(nMix)
+  seSrcA <- SDSrcA/sqrt(nSrcA)
+  seSrcB <- SDSrcB/sqrt(nSrcB)
+  # Calculating fA and fB
+  fA <- (Mix-SrcB)/(SrcA-SrcB)
+  fB <- (Mix-SrcA)/(SrcB-SrcA)
+  # Calculating vafA and vafB
+  vafA <- (1/(SrcA-SrcB)^2) * (seMix^2 + fA^2*seSrcA^2 + (1-fA)^2*seSrcB^2)
+  vafB <- (1/(SrcB-SrcA)^2) * (seMix^2 + fB^2*seSrcB^2 + (1-fB)^2*seSrcA^2)
+  # Calculating SDfA and SDfB
+  SDfA <- sqrt(vafA)
+  SDfB <- sqrt(vafB)
+  return(data.frame(fA=fA,SDfA=SDfA,fB=fB,SDfB=SDfB))
+}
+
+```
+
+
+## Data Handling {-}
+
+### Importing Data {-}
+
+First we will import all data from 5 N, 8 N, ALOHA-S, ALOHA-W, and OSP. We want this all in one big data frame with columns for descriptive variables, AA $\dN$ values, and the standard deviations for each AA $\dN$ value.
+
+```{r import-data}
+columns <- c("Location", "Epoch", "Tow", "Event", "Net", "Depth", "Size", "Sizecat", "Type", "Group", "EA Sample ID", allAA, SDallAA)
+# Importing data from each location
+dN.5N <- as.data.frame(read_excel("Data/Old_Col_Names/AA-CSIA_5N.xlsx", 
+    sheet = "d15N"))[columns]
+
+dN.8N <- as.data.frame(read_excel("Data/Old_Col_Names/AA-CSIA_8N.xlsx", 
+    sheet = "d15N"))[columns]
+
+dN.ALOHAS <- as.data.frame(read_excel("Data/Old_Col_Names/AA-CSIA_ALOHA_Summer.xlsx", 
+    sheet = "d15N"))[columns]
+
+dN.ALOHAW <- as.data.frame(read_excel("Data/Old_Col_Names/AA-CSIA_ALOHA_Winter.xlsx", 
+    sheet = "d15N"))[columns]
+
+dN.OSP <- as.data.frame(read_excel("Data/Old_Col_Names/AA-CSIA_OSP.xlsx", 
+    sheet = "d15N"))[columns]
+
+dN.PAP <- as.data.frame(read_excel("Data/Old_Col_Names/AA-CSIA_PAP.xlsx", 
+    sheet = "d15N"))[columns]
+
+# Consolidating into one master data frame
+dN.all <- rbind(dN.5N, dN.8N, dN.ALOHAS, dN.ALOHAW, dN.OSP, dN.PAP)
+# ordering "size" factor to be in ascending order
+dN.all$Size = factor(dN.all$Size,
+                             c("0.2-0.7 μm","0.3-1 μm","1-5 μm","1-6 μm","0.7-53 μm","1-53 μm","6-51 μm",">51 μm",">53 μm","0.06-0.2 mm","0.2-0.5 mm", "0.5-1.0 mm", "1-2 mm", "2-5 mm", ">5 mm"))
+
+data.romero <- as.data.frame(read_excel("Data/Romero-Romero2020.xlsx"))
+```
+
+### Derived Parameters {-}
+
+Next we will be calculating some derived parameters for each sample. Those parameters are as follows:
+
+**Trophic position (TP)** is calculated via the equation:
+$$
+\mathrm{
+TP = \frac{\delta^{15}N_{trp} - \delta^{15}N_{src} - \beta_{trp-src}}{TDF_{trp-src}}
+}
+$$
+
+To assess error in TP we will use the equation from Bradley et al. 2015:
+
+\begin{align}
+\sigma^2_{TP} &= \left( \frac{\partial~TP}{\partial~\delta^{15}N_{trp}} \right)^2 \sigma^2_{\delta^{15}N_{trp}} +
+                 \left( \frac{\partial~TP}{\partial~\delta^{15}N_{src}} \right)^2 \sigma^2_{\delta^{15}N_{src}} +
+                 \left( \frac{\partial~TP}{\partial~\beta_{trp-src}} \right)^2 \sigma^2_{\beta_{trp-src}} +
+                 \left( \frac{\partial~TP}{\partial~TDF_{trp-src}} \right)^2 \sigma^2_{TDF_{trp-src}} \\
+              &= \left( \frac{\sigma_{\delta^{15}N_{trp}}}{TDF_{trp-src}} \right)^2 +
+                 \left( \frac{\sigma_{\delta^{15}N_{src}}}{TDF_{trp-src}} \right)^2 +
+                 \left( \frac{\sigma_{\beta_{trp-src}}}{TDF_{trp-src}} \right)^2 +
+                 \left( \frac{\delta^{15}N_{src} + \beta_{trp-src} - \delta^{15}N_{trp}}{TDF_{trp-src}^2} \right)^2\sigma^2_{TDF_{trp-src}}
+\end{align}
+
+
+**The average $\dNSAA$ value** is calculating by taking the average $dN$ values of a subset of source amino acids. Traditionally Gly, Ser, Phe, and Lys  have been used, but here we will experiment with excluding some of the SAAs, namely Gly and Ser. This is related to the degree of enzymatic degradation the particle has undergone. Assessing error in the $\dNSAA$ value is a simple matter of error propagation through a sum followed by division by an exact number.
+
+```{r Derive-Params}
+data.all <- dN.all
+
+# Calculating dN_SAA(Ser,Gly,Phe,Lys) and its SD
+data.all$SAA <-
+  (data.all$Phe + data.all$Gly + 
+     data.all$Ser + data.all$Lys)/4
+data.all$SDSAA <- 
+  sqrt(data.all$SDPhe^2 + data.all$SDGly^2 + 
+         data.all$SDSer^2 + data.all$SDLys^2)/4
+
+# Calculating dN_SAA(Gly,Phe,Lys) and its SD
+data.all$SAAB <-
+  (data.all$Phe + data.all$Gly + 
+     data.all$Lys)/3
+data.all$SDSAAB <- 
+  sqrt(data.all$SDPhe^2 + data.all$SDGly^2 + 
+         data.all$SDLys^2)/3
+
+# Calculating dNSAA(Phe,Lys) and its SD
+data.all$SAAC <-
+  (data.all$Phe + data.all$Lys)/2
+data.all$SDSAAC <- 
+  sqrt(data.all$SDPhe^2 + data.all$SDLys^2)/2
+
+# Calculating dNSAA(Ser,Gly) and its SD
+data.all$SAAD <-
+  (data.all$Ser + data.all$Gly)/2
+data.all$SDSAAD <- 
+  sqrt(data.all$SDSer^2 + data.all$SDGly^2)/2
+
+# turning any infinite SDs into 0.5s
+data.all$SDSAA[is.na(data.all$SDSAA)] <- 0.5
+data.all$SDSAAB[is.na(data.all$SDSAAB)] <- 0.5
+data.all$SDSAAC[is.na(data.all$SDSAAC)] <- 0.5
+data.all$SDSAAD[is.na(data.all$SDSAAD)] <- 0.5
+data.all$SDPhe[is.na(data.all$SDPhe)] <- 0.5
+
+
+# Calculating TP_Glx-Phe with SD
+data.all$TPGlx <- (data.all$Glx - data.all$Phe - TP.parms$beta[1])/TP.parms$TDF[1]+1
+data.all$SDTPGlx <- (data.all$SDGlx/TP.parms$TDF[1])^2+
+  (data.all$SDPhe/TP.parms$TDF[1])^2+
+  (TP.parms$SDbeta[1]/TP.parms$TDF[1])^2+
+  ((data.all$Phe + TP.parms$beta[1] - data.all$Glx)/
+     TP.parms$TDF[1]^2)^2 * TP.parms$SDTDF[1]^2
+
+# Calculating TP_Ala-Phe with SD
+data.all$TPAla <- (data.all$Ala - data.all$Phe - TP.parms$beta[2])/TP.parms$TDF[2]+1
+data.all$SDTPAla <- (data.all$SDAla/TP.parms$TDF[2])^2+
+  (data.all$SDPhe/TP.parms$TDF[2])^2+
+  (TP.parms$SDbeta[2]/TP.parms$TDF[2])^2+
+  ((data.all$Phe + TP.parms$beta[2] - data.all$Ala)/
+     TP.parms$TDF[2]^2)^2 * TP.parms$SDTDF[2]^2
+```
+
+
+## Data Summary {-}
+
+```{r master-table, eval=FALSE}
+# Last let's print a table with all the data
+datatable(data.all,
+          options=list(autoWidth = TRUE, columnDefs = list(list(width = '10px', targets = c(1,3))))) %>%
+  formatRound(columns = c(allAA.ord,
+                          "SAAB", "SDSAAB", "SAAC", "SDSAAC", "TPGlx", "SDTPGlx", "TPAla", "SDTPAla"), 
+              digits=2)
+```
+
+
+# Analysis {-}
+
+## (1) Does simply excluding Ser and Gly change data interpretation and mixing model results? {-} 
+
+We will carry out this assessment in two steps:
+
+  1. Draw up $\dNSAA$ depth profiles using a) all four SAAs, b) Gly, Phe, and Lys, c) Phe and Lys, d) only Phe.
+  2. Generate mixing models under those same four conditions.
+  
+Let's begin by drawing up those $\dNSAA$ depth profiles at each location. We'll make a plotting function to make this easier.
+
+```{r SAA-vs-Depth_Plotting-Function, cache=TRUE}
+
+SAA_depth_plot <- function(
+    data.all,
+    sitename,
+    epochname = NULL
+){
+  
+  data.all.long <-
+    melt(data.all,
+         id.vars = c("Depth","Sizecat","Location","Epoch","Type","Group","Event","Size"),
+         measure.vars = c("SAAC","SAA","SAAD"),
+         variable.name = "SAAs", value.name = "Mean")
+  data.all.long$SD <-
+      melt(data.all,
+           id.vars = c("Depth","Sizecat","Location","Epoch","Type","Group","Event","Size"),
+           measure.vars = c("SDSAAD","SDSAA","SDSAAD"),
+           variable.name = "SAAs", value.name = "SD")$SD
+  levels(data.all.long$SAAs) <- c("Phe, Lys",
+                                  "Phe, Lys, Ser, Gly",
+                                  "Ser, Gly")
+  
+  if(is.null(epochname)) {
+    data.plots.zoops <- subset(data.all.long, Type == "Zooplankton" & Event == "Night" & Group == "Mixed" & Location == sitename &
+                               (Size == "0.2-0.5 mm" | Size == "1-2 mm" | Size == "2-5 mm" | Size == ">5 mm"))
+  } else{
+    data.plots.zoops <- subset(data.all.long, Type == "Zooplankton" & Event == "Night" & Group == "Mixed" & Epoch == epochname & Location == sitename &
+                               (Size == "0.2-0.5 mm" | Size == "1-2 mm" | Size == "2-5 mm" | Size == ">5 mm"))
+  }
+  data.plots.zoops$Size <- factor(data.plots.zoops$Size, levels = c("0.2-0.5 mm","1-2 mm","2-5 mm",">5 mm"))
+    
+  data.plots.traps <- subset(data.all.long, Type == "Trap" & Location == sitename)
+  data.plots.parts <- subset(data.all.long, Type == "Particle" & Location == sitename)
+  
+  maxdepth <-
+    round(max(data.plots.zoops$Depth)+50, -2)
+  
+  ggplot()+
+    geom_smooth( # Particles
+      data = data.plots.parts,
+      aes(x = Mean, y = Depth, color = Sizecat, fill = Sizecat, group = Sizecat), 
+      orientation = "y", level=0.75, span=1.2)+
+    geom_point(
+      data = data.plots.parts,
+      aes(x = Mean, y = Depth, color = Sizecat, fill = Sizecat, group = Sizecat), 
+      size=1, shape=21, alpha=0.7)+
+    geom_point( # Sediment Traps
+      data = data.plots.traps,
+      aes(x = Mean, y = Depth, xmin = Mean-SD, xmax = Mean+SD, color = Sizecat, fill = Sizecat),
+      size = 1.5, stroke = 0.75, shape = 25)+
+    geom_errorbarh(
+      data = data.plots.traps,
+      aes(x = Mean, y = Depth, xmin = Mean-SD, xmax = Mean+SD), 
+      height = 1, size = 0.5, linetype = 1, color = 'black')+
+    geom_point( # Zooplankton
+      data = data.plots.zoops,
+      aes(x = Mean, y = Depth, shape = Size),
+      color = "black", size = 1.5, stroke = 0.95)+
+    # geom_path(
+    #   data = data.plots.zoops,
+    #   aes(x = Mean, y = Depth, group = Size, inherit = FALSE),
+    #   color = "black", size = 1, linetype = "solid", alpha = 0.5)+
+    geom_smooth(
+      data = data.plots.zoops,
+      aes(x = Mean, y = Depth),
+      orientation = "y", level=0.95, span=0.9, color = "black", se = FALSE)+
+    geom_errorbarh(
+      data = data.plots.zoops,
+      aes(x = Mean, y = Depth, xmin = Mean-SD, xmax = Mean+SD), 
+      height = 1, size = 0.5, linetype = 1, color = 'black')+
+    scale_y_reverse() + ylab('Depth (m)') +
+    scale_x_continuous(minor_breaks = seq(-8,16,2), breaks = seq(-8,16,4))+ 
+    xlab(expression(delta^{15}*"N"[SAA]*" (\u2030)")) + 
+    labs(color = "Particles", fill="Particles", shape = "Zooplankton")+
+    theme_light()+theme(strip.text.x = element_text(size = 8),
+                        axis.title.x = element_blank(),
+                        axis.title.y = element_blank(),
+                        plot.title = element_text(size=12, hjust=0.5))+ 
+    coord_cartesian(expand = FALSE, ylim = c(maxdepth,0))+
+    facet_wrap(~ SAAs, nrow = 1, scales="free_x")+
+    scale_color_discrete(type = c("#F8766D", "#00BA38", "#619CFF","black"))+
+    scale_fill_discrete(type = c("#F8766D", "#00BA38", "#619CFF","goldenrod"))+
+    scale_shape_discrete(drop=FALSE)+
+    ggtitle(paste(sitename,epochname))
+}
+
+```
+
+```{r SAA-vs-Depth_All-Locations, warning=FALSE, dpi=300, fig.width=8.5, fig.height=7, cache=FALSE}
+
+plot.PAP1 <-
+  SAA_depth_plot(
+    data.all,
+    "PAP",
+    1
+  ) + ggtitle("PAP Epoch 1") +
+  coord_cartesian(expand = FALSE, ylim = c(1000,0))
+plot.PAP3 <-
+  SAA_depth_plot(
+    data.all,
+    "PAP",
+    3
+  ) + ggtitle("North Atlantic") +
+  coord_cartesian(expand = FALSE, ylim = c(1000,0))
+plot.OSP <-
+  SAA_depth_plot(
+    data.all,
+    "OSP"
+  ) + ggtitle("Station Papa") + 
+  coord_cartesian(expand = FALSE, ylim = c(1000,0))
+plot.ALOHAS <-
+  SAA_depth_plot(
+    data.all,
+    "ALOHA",
+    "Summer"
+  )
+plot.ALOHAW <-
+  SAA_depth_plot(
+    data.all,
+    "ALOHA",
+    "Winter"
+  )
+plot.5N <-
+  SAA_depth_plot(
+    data.all,
+    "5 N"
+  ) + ggtitle("5° N")
+plot.8N <-
+  SAA_depth_plot(
+    data.all,
+    "8 N"
+  ) + ggtitle("8° N")
+plot.blank <-
+  ggplot+geom_blank()+theme_bw()+theme(panel.border=element_blank())
+
+ggarrange(
+  ggplot() + geom_blank() + ylab("Depth (m)"),
+
+ggarrange(plot.OSP,    plot.PAP3,
+          plot.ALOHAS, plot.ALOHAW,
+          plot.5N,     plot.8N,
+          ncol = 2, nrow=3,
+          common.legend = TRUE, legend="right"),
+  
+  ggplot() + geom_blank() + theme_void(),
+  ggplot() + geom_blank() + xlab(expression(delta^{15}*"N"["SAA"]*" (\u2030)                      ")),
+  widths = c(0.03,1),
+  heights = c(1,0.05)
+)
+
+
+```
+
+To communicate this result perhaps it is easiest just to show it for one location and put full plots for all locations in the supplement. Lets expand for each individual station.
+
+```{r SAA-vs-Depth_Each-Location, warning=FALSE, dpi=300, fig.width=7, fig.height=3, cache=TRUE}
+
+plot.PAP1
+plot.PAP3
+plot.OSP + 
+  theme(axis.title.x = element_text(),
+        axis.title.y = element_text(angle = 90, 
+                                    vjust = 3)) + 
+  labs(title = NULL) + xlab(expression(delta^{15}*"N"["SAA"]*" (\u2030)"))
+plot.ALOHAS
+plot.ALOHAW
+plot.5N
+plot.8N
+
+
+```
+
+```{r Phe-Lys-vs-Depth, dpi=300, fig.width=7.5, fig.height = 5, cache=FALSE}
+
+SAA_depth_plot <- function(
+    data.all,
+    sitename,
+    epochname = NULL
+){
+  
+  if(is.null(epochname)) {
+    data.plots.zoops <- subset(data.all, Type == "Zooplankton" & Event == "Night" & Group == "Mixed" & Location == sitename &
+                               (Size == "0.2-0.5 mm" | Size == "1-2 mm" | Size == "2-5 mm" | Size == ">5 mm"))
+  } else{
+    data.plots.zoops <- subset(data.all, Type == "Zooplankton" & Event == "Night" & Group == "Mixed" & Epoch == epochname & Location == sitename &
+                               (Size == "0.2-0.5 mm" | Size == "1-2 mm" | Size == "2-5 mm" | Size == ">5 mm"))
+  }
+  data.plots.zoops$Size <- factor(data.plots.zoops$Size, levels = c("0.2-0.5 mm","1-2 mm","2-5 mm",">5 mm"))
+    
+  data.plots.traps <- subset(data.all, Type == "Trap" & Location == sitename)
+  data.plots.parts <- subset(data.all, Type == "Particle" & Location == sitename)
+  
+  maxdepth <-
+    round(max(data.plots.zoops$Depth)+50, -2)
+  
+  ggplot()+
+    geom_smooth( # Particles
+      data = data.plots.parts,
+      aes(x = SAAC, y = Depth, color = Sizecat, fill = Sizecat, group = Sizecat), 
+      orientation = "y", level=0.75, span=1.2)+
+    geom_point(
+      data = data.plots.parts,
+      aes(x = SAAC, y = Depth, color = Sizecat, fill = Sizecat, group = Sizecat), 
+      size=1, shape=21, alpha=0.7)+
+    geom_point( # Sediment Traps
+      data = data.plots.traps,
+      aes(x = SAAC, y = Depth, xmin = SAAC-SDSAAC, xmax = SAAC+SDSAAC, color = Sizecat, fill = Sizecat),
+      size = 1.5, stroke = 0.75, shape = 25)+
+    # geom_errorbarh(
+    #   data = data.plots.traps,
+    #   aes(x = SAAC, y = Depth, xmin = SAAC-SDSAAC, xmax = SAAC+SDSAAC), 
+    #   height = 1, size = 0.5, linetype = 1, color = 'black')+
+    geom_point( # Zooplankton
+      data = data.plots.zoops,
+      aes(x = SAAC, y = Depth, shape = Size),
+      color = "black", size = 1.5, stroke = 0.95)+
+    # geom_path(
+    #   data = data.plots.zoops,
+    #   aes(x = SAAC, y = Depth, group = Size, inherit = FALSE),
+    #   color = "black", size = 1, linetype = "solid", alpha = 0.5)+
+    geom_smooth(
+      data = data.plots.zoops,
+      aes(x = SAAC, y = Depth),
+      orientation = "y", level=0.95, span=0.9, color = "black", se = FALSE)+
+    # geom_errorbarh(
+    #   data = data.plots.zoops,
+    #   aes(x = SAAC, y = Depth, xmin = SAAC-SDSAAC, xmax = SAAC+SDSAAC), 
+    #   height = 1, size = 0.5, linetype = 1, color = 'black')+
+    scale_y_reverse() + ylab('Depth (m)') +
+    scale_x_continuous(minor_breaks = seq(-8,16,2), breaks = seq(-8,16,4))+ 
+    xlab(expression(delta^{15}*"N"["Phe,Lys"]*" (\u2030)")) + 
+    labs(color = "Particles", fill="Particles", shape = "Zooplankton")+
+    theme_light()+theme(strip.text.x = element_text(size = 8), 
+                        axis.title.x = element_blank(),
+                        axis.title.y = element_blank(),
+                        plot.title = element_text(size=12, hjust=0.5))+ 
+    coord_cartesian(expand = FALSE, ylim = c(maxdepth,0))+
+    scale_color_discrete(type = c("#F8766D", "#00BA38", "#619CFF","black"))+
+    scale_fill_discrete(type = c("#F8766D", "#00BA38", "#619CFF","goldenrod"))+
+    scale_shape_discrete(drop=FALSE)+
+    ggtitle(paste(sitename,epochname))
+}
+
+# plot.PAP1 <-
+#   SAA_depth_plot(
+#     data.all,
+#     "PAP",
+#     1
+#   ) + ggtitle("PAP Epoch 1")
+plot.PAP3 <-
+  SAA_depth_plot(
+    data.all,
+    "PAP",
+    3
+  ) + ggtitle("North Atlantic") +
+  coord_cartesian(expand = FALSE, ylim = c(1000,0))
+plot.OSP <-
+  SAA_depth_plot(
+    data.all,
+    "OSP"
+  ) + ggtitle("Station Papa") +
+  coord_cartesian(expand = FALSE, ylim = c(1000,0))
+plot.ALOHAS <-
+  SAA_depth_plot(
+    data.all,
+    "ALOHA",
+    "Summer"
+  )
+plot.ALOHAW <-
+  SAA_depth_plot(
+    data.all,
+    "ALOHA",
+    "Winter"
+  )
+plot.5N <-
+  SAA_depth_plot(
+    data.all,
+    "5 N"
+  ) + ggtitle("5° N")
+plot.8N <-
+  SAA_depth_plot(
+    data.all,
+    "8 N"
+  ) + ggtitle("8° N")
+plot.blank <-
+  ggplot+geom_blank()+theme_bw()+theme(panel.border=element_blank())
+
+ggarrange(
+  ggplot() + geom_blank() + ylab("Depth (m)"),
+  
+  ggarrange(plot.OSP,  plot.ALOHAS, plot.5N, 
+            plot.PAP3, plot.ALOHAW, plot.8N, 
+            ncol = 3, nrow=2,
+            common.legend = TRUE, legend="right"),
+  
+  ggplot() + geom_blank() + theme_void(),
+  ggplot() + geom_blank() + xlab(expression(delta^{15}*"N"["Phe,Lys"]*" (\u2030)                      ")),
+  widths = c(0.03,1),
+  heights = c(1,0.05)
+)
+
+
+```
+
+Inspection of the above $\dNSAA$ depth profiles reveals that the exclusion of Ser and Gly lowers the $\dNSAA$ values of zooplankton relative to all sources of organic matter. This shift will surely have significant consequences regarding how we interpret the relative importance of these sources of organic matter to the mesopelagic zooplankton community. For example, our recent publication discussing the results at OSP highlighted the importance of small particles and the mismatch between zooplankton and sediment trap $\dNSAA$ values. When Gly and Ser are excluded from analysis, neither of these appear to be features of this data set.
+
+Hannides et al. 2020 has a pretty nice figure (Figure 11) showing the $\dNSAA$ values of zooplankton pooled at various depths relative to the possible sources of organic matter. Let's try and recreate that figure using various combinations of SAAs on the y axis.
+
+```{r Hannides-Fig11-remake, fig.asp=0.3, fig.width=8, dpi = 300, eval = FALSE}
+
+## Depth averaging data
+
+data.parts.avg <- 
+  subset(data.all, ((Location == "ALOHA") &
+                      (Depth >= 250 & 
+                      (Type == "Particle" & (Group == "Small" | Group == "Large")) |
+           Group == "Surface")))%>%
+  group_by(Group, Type, .drop = TRUE) %>%
+  summarise(
+    SDSAA = max(sd(SAA, na.rm = TRUE),SDmean(SDSAA), na.rm = TRUE), 
+    SAA_N = n(), 
+    SAA = mean(SAA, na.rm = TRUE), 
+    # All SAAs
+    SDSAAB = max(sd(SAAB, na.rm = TRUE),SDmean(SDSAAB), na.rm = TRUE), 
+    SAAB_N = n(), 
+    SAAB = mean(SAAB, na.rm = TRUE), 
+    # Gly, Phe, Lys
+    SDSAAC = max(sd(SAAC, na.rm = TRUE),SDmean(SDSAAC), na.rm = TRUE), 
+    SAAC_N = n(), 
+    SAAC = mean(SAAC, na.rm = TRUE), 
+    # Phe, Lys
+    SDSAAD = max(sd(SAAD, na.rm = TRUE),SDmean(SDSAAD), na.rm = TRUE), 
+    SAAD_N = n(), 
+    SAAD = mean(SAAD, na.rm = TRUE), 
+    # Ser, Gly
+    SDPhe = max(sd(Phe, na.rm = TRUE),SDmean(SDPhe), na.rm = TRUE), 
+    Phe_N = n(), 
+    Phe = mean(Phe, na.rm = TRUE)) # Phe
+# data.avg.parts$Depth = as.numeric(as.character(data.avg.parts$Depth))
+
+data.zoops.25   <- subset(data.all, (Depth >= 300 & Depth <= 500) & 
+                            (Location == "ALOHA") &
+                            (Type=="Zooplankton"))
+# data.zoops.25[data.zoops.25["Group"]!="Mixed",]$Group = "Taxa"
+data.zoops.25$DepthRange <- "300-500 m"
+  
+data.zoops.510  <- subset(data.all, (Depth >= 700 & Depth <= 1000) & 
+                            (Location == "ALOHA") &
+                            (Type=="Zooplankton"))
+# data.zoops.510[data.zoops.510["Group"]!="Mixed",]$Group = "Taxa"
+data.zoops.510$DepthRange <- "700-1000 m"
+  
+data.zoops.1015 <- subset(data.all, (Depth >= 1000 & Depth <= 1500) & 
+                            (Location == "ALOHA") &
+                            (Type=="Zooplankton"))
+data.zoops.1015[data.zoops.1015["Group"]!="Mixed",]$Group = "Taxa"
+data.zoops.1015$DepthRange <- "1000-1500 m"
+
+data.zoops.strata <- rbind(data.zoops.25, data.zoops.510, data.zoops.1015)
+data.zoops.strata$DepthRange <- factor(data.zoops.strata$DepthRange, levels = c("300-500 m","700-1000 m","1000-1500 m"))
+
+## Now we'll melt the data into a long format for plotting
+
+
+data.parts.avg.long <-
+  melt(data.parts.avg,
+       id.vars = c("Group","Type"),
+       measure.vars = c("SAA","SAAC","SAAD"),
+       variable.name = "SAAs", value.name = "Mean")
+data.parts.avg.long$SD <-
+      melt(data.parts.avg,
+           id.vars = c("Group","Type"),
+           measure.vars = c("SDSAA","SDSAAC","SDSAAD"),
+           variable.name = "SAAs", value.name = "SD")$SD
+
+
+data.zoops.strata.long <-
+  melt(data.zoops.strata,
+       id.vars = c("Group","Location","Type","DepthRange"),
+       measure.vars = c("SAA","SAAC","SAAD"),
+       variable.name = "SAAs", value.name = "Mean")
+data.zoops.strata.long$SD <-
+      melt(data.zoops.strata,
+           id.vars = c("Group","Location","Type","DepthRange"),
+           measure.vars = c("SDSAA","SDSAAC","SDSAAD"),
+           variable.name = "SAAs", value.name = "SD")$SD
+
+
+data.plots.avg.parts <- data.parts.avg.long
+data.plots.zoops <- data.zoops.strata.long
+
+SAA_types <- list("SAA"  = "Gly, Ser, Phe, Lys",
+                  "SAAC" = "Phe, Lys",
+                  "SAAD" = "Ser, Gly")
+facet_labeller <- function(variable,value){
+  return(SAA_types[value])
+}
+
+plot.parts_zoops =
+  ggplot(data = data.plots.avg.parts, aes(x = Mean, xmin = Mean-SD, xmax = Mean+SD))+
+  geom_vline(aes(xintercept = Mean), color = "grey", lty=2)+
+  # geom_errorbarh(aes(xmin=Mean, xmax=Mean, color=Group), lty=2, height=0.7, show.legend = FALSE)+
+  # geom_errorbarh(aes(color=Group), height=0, size=10, alpha=0.5, show.legend = FALSE)+
+  geom_rect(aes(ymin = -Inf, ymax = Inf , fill = Group), alpha = 0.50, color = NA)+
+  geom_point(data = data.plots.zoops,
+             aes(x = Mean, y = interaction(Group,Location), xmin = Mean-SD, xmax = Mean+SD,
+                 color = DepthRange), #position = position_dodgev(height = -0.5),
+             size = 1.5, stroke = 0.5)+
+  geom_point(data = data.plots.zoops,
+             aes(x = Mean, y = interaction(Group,Location), xmin = Mean-SD, xmax = Mean+SD),
+                 color = "black", shape=21,#position = position_dodgev(height = -0.5),
+             size = 1.5, stroke = 0.5)+
+  labs(color="Zooplankton", fill="Particles")+
+  scale_y_discrete(labels = c("Mixed.ALOHA W"="Size Fractions: Winter", "Mixed.ALOHA S"="Size Fractions: Summer", "Taxa.ALOHA W"="Taxa: Winter","Taxa.ALOHA S"="Taxa: Summer"),
+                   limits = c("Taxa.ALOHA S","Taxa.ALOHA W","Mixed.ALOHA S","Mixed.ALOHA W"),
+                   )+
+  # scale_color_discrete(guide=FALSE)+
+  scale_fill_manual(values = c("forestgreen","indianred","khaki1"))+
+  scale_color_manual(values = c("skyblue","orange","black"))+
+  # scale_shape(solid=FALSE)+
+  xlab(expression(delta^{15}*"N"[SAA]*" (\u2030)")) +
+  coord_cartesian(xlim=c(-3,8))+
+  theme_light()+
+  theme(text=element_text(family="serif"),
+        axis.title.y = element_blank())+
+  facet_wrap(~ SAAs, nrow=1, labeller = facet_labeller)
+
+plot.parts_zoops
+
+
+
+```
+
+These remakes of Hannides et al. (2020) Figure 11 clearly show the different interpretations that emerge when different sets of SAAs are included in a source tracing analysis. Ser and Gly suggest small and large particles supply organic matter to deep-sea biota, while Phe and Lys suggest that surface and small particles are the major sources.
+
+Let's extend this to all five locations. We'll produce a second version of this plot for all locations, with SAAs on the y axis.
+
+```{r Hannides-Fig11-all-locations, fig.asp=0.8, fig.width=6, dpi = 300, eval = FALSE}
+
+## Depth averaging data
+
+data.parts.avg <- 
+  subset(data.all, ((Depth >= 250) & 
+           (Type == "Particle" & (Group == "Small" | Group == "Large"))) |
+           Group == "Surface")%>%
+  group_by(Group, Type, Location, .drop = TRUE) %>%
+  summarise(
+    SDSAA = max(sd(SAA, na.rm = TRUE),SDmean(SDSAA), na.rm = TRUE), SAA_N = n(), SAA = mean(SAA, na.rm = TRUE),  # All SAAs
+    # SDSAAB = max(sd(SAAB, na.rm = TRUE),SDmean(SDSAAB), na.rm = TRUE), SAAB_N = n(), SAAB = mean(SAAB, na.rm = TRUE), # Gly, Phe, Lys
+    SDSAAC = max(sd(SAAC, na.rm = TRUE),SDmean(SDSAAC), na.rm = TRUE), SAAC_N = n(), SAAC = mean(SAAC, na.rm = TRUE), # Phe, Lys
+    SDSAAD = max(sd(SAAD, na.rm = TRUE),SDmean(SDSAAD), na.rm = TRUE), SAAD_N = n(), SAAD = mean(SAAD, na.rm = TRUE), # Ser, Gly
+    SDPhe = max(sd(Phe, na.rm = TRUE),SDmean(SDPhe), na.rm = TRUE), Phe_N = n(), Phe = mean(Phe, na.rm = TRUE)) # Phe
+# data.avg.parts$Depth = as.numeric(as.character(data.avg.parts$Depth))
+
+data.zoops.25   <- subset(data.all, (Depth >= 300 & Depth <= 500) & 
+              (Type == "Zooplankton" & Size == "1-2 mm"))
+data.zoops.25$DepthRange <- "300-500 m"
+  
+data.zoops.510  <- subset(data.all, (Depth >= 700 & Depth <= 1000) & 
+              (Type == "Zooplankton" & Size == "1-2 mm"))%>%
+  group_by(Group, Type, Location, .drop = TRUE)
+data.zoops.510$DepthRange <- "700-1000 m"
+  
+data.zoops.1015 <- subset(data.all, (Depth >= 1000 & Depth <= 1500) & 
+              (Type == "Zooplankton" & Size == "1-2 mm"))
+data.zoops.1015$DepthRange <- "1000-1500 m"
+
+data.zoops.avg <- rbind(data.zoops.25, data.zoops.510, data.zoops.1015)
+data.zoops.avg$DepthRange <- factor(data.zoops.avg$DepthRange, levels = c("300-500 m","700-1000 m","1000-1500 m"))
+
+## Now we'll melt the data into a long format for plotting
+
+data.parts.avg.long <-
+  melt(data.parts.avg,
+       id.vars = c("Group","Type","Location"),
+       measure.vars = c("SAA","SAAC","SAAD"),
+       variable.name = "SAAs", value.name = "Mean")
+data.parts.avg.long$SD <-
+      melt(data.parts.avg,
+           id.vars = c("Group","Type","Location"),
+           measure.vars = c("SDSAA","SDSAAC","SDSAAD"),
+           variable.name = "SAAs", value.name = "SD")$SD
+
+
+data.zoops.avg.long <-
+  melt(data.zoops.avg,
+       id.vars = c("Group","Type","Location","DepthRange"),
+       measure.vars = c("SAA","SAAC","SAAD"),
+       variable.name = "SAAs", value.name = "Mean")
+data.zoops.avg.long$SD <-
+      melt(data.zoops.avg,
+           id.vars = c("Group","Type","Location","DepthRange"),
+           measure.vars = c("SDSAA","SDSAAC","SDSAAD"),
+           variable.name = "SAAs", value.name = "SD")$SD
+
+# ## Plotting for 5 N
+# data.plots.avg.parts <- subset(data.parts.avg.long, Location == "5 N")
+# data.plots.zoops <- subset(data.zoops.avg.long, Location == "5 N")
+
+data.plots.avg.parts <- data.parts.avg.long
+data.plots.zoops <- data.zoops.avg.long
+
+plot.parts_zoops =
+  ggplot(data = data.plots.avg.parts,
+         aes(x = Mean, y = SAAs, xmin = Mean-SD, xmax = Mean+SD))+
+  geom_errorbarh(aes(xmin=Mean, xmax=Mean, color=Group), lty=2, height=0.7, show.legend = FALSE)+
+  geom_errorbarh(aes(color=Group), height=0, size=10, alpha=0.5, show.legend = FALSE)+
+  geom_ribbon(aes(fill = Group), alpha = 0.50, color = NA)+
+  geom_point(data = data.plots.zoops,
+             aes(x = Mean, y = SAAs, xmin = Mean-SD, xmax = Mean+SD,
+                 shape = DepthRange),
+             size = 1.5, stroke = 0.75)+
+  theme_light()+theme(text=element_text(family="serif"))+
+  theme(strip.text = element_text(size = 12, face = "bold"),
+        text=element_text(family="serif"))+
+  labs(shape="Zooplankton", fill="Particles")+
+  scale_y_discrete(limits=rev, labels = c("Ser, Gly","Phe, Lys","Gly, Ser, Phe, Lys"))+
+  xlab(expression(delta^{15}*"N"[SAA]*" (\u2030)")) + ylab('') +
+  coord_cartesian(xlim=c(-3,12))+
+  # ggtitle("5 N")
+  facet_wrap(~ Location, nrow=3)
+
+plot.parts_zoops
+
+
+
+```
+
+The takeaways from these plots are very similar.
+
+```{r Hannides-Fig11-better-mean, fig.asp=1, out.width="100%", dpi = 300, eval = FALSE}
+
+## Depth averaging data
+
+data.parts.avg <- 
+  subset(data.all, ((Depth >= 190) & 
+           (Type == "Particle" & (Group == "Small" | Group == "Large"))) |
+           Group == "Surface")%>%
+  group_by(Group, Type, Location, .drop = TRUE) %>%
+  summarise(
+    SDSAA = max(sd(SAA, na.rm = TRUE),SDmean(SDSAA), na.rm = TRUE), SAA_N = n(), SAA = mean(SAA, na.rm = TRUE), # All SAAs
+    SDSAAB = max(sd(SAAB, na.rm = TRUE),SDmean(SDSAAB), na.rm = TRUE), SAAB_N = n(), SAAB = mean(SAAB, na.rm = TRUE), # Gly, Phe, Lys
+    SDSAAC = max(sd(SAAC, na.rm = TRUE),SDmean(SDSAAC), na.rm = TRUE), SAAC_N = n(), SAAC = mean(SAAC, na.rm = TRUE), # Phe, Lys
+    SDPhe = max(sd(Phe, na.rm = TRUE),SDmean(SDPhe), na.rm = TRUE), Phe_N = n(), Phe = mean(Phe, na.rm = TRUE)) # Phe
+# data.avg.parts$Depth = as.numeric(as.character(data.avg.parts$Depth))
+
+
+data.zoops.25   <- subset(data.all, (Depth >= 300 & Depth <= 500) & 
+              (Type == "Zooplankton" & Size == "1-2 mm"))%>%
+  group_by(Group, Type, Location, .drop = TRUE) %>%
+  summarise(
+    SAA = mean(SAA, na.rm = TRUE), SDSAA = max(sd(SAA),SDmean(SDSAA), na.rm = TRUE), SAA_N = n(), # All SAAs
+    SAAB = mean(SAAB, na.rm = TRUE), SDSAAB = max(sd(SAAB),SDmean(SDSAAB), na.rm = TRUE), SAAB_N = n(), # Gly, Phe, Lys
+    SAAC = mean(SAAC, na.rm = TRUE), SDSAAC = max(sd(SAAC),SDmean(SDSAAC), na.rm = TRUE), SAAC_N = n(), # Phe, Lys
+    Phe = mean(Phe, na.rm = TRUE), SDPhe = max(sd(Phe),SDmean(SDPhe), na.rm = TRUE), Phe_N = n()) # Phe
+data.zoops.25$DepthRange <- "200-500 m"
+  
+data.zoops.510  <- subset(data.all, (Depth >= 700 & Depth <= 1000) & 
+              (Type == "Zooplankton" & Size == "1-2 mm"))%>%
+  group_by(Group, Type, Location, .drop = TRUE) %>%
+  summarise(
+    SAA = mean(SAA, na.rm = TRUE), SDSAA = max(sd(SAA),SDmean(SDSAA), na.rm = TRUE), SAA_N = n(), # All SAAs
+    SAAB = mean(SAAB, na.rm = TRUE), SDSAAB = max(sd(SAAB),SDmean(SDSAAB), na.rm = TRUE), SAAB_N = n(), # Gly, Phe, Lys
+    SAAC = mean(SAAC, na.rm = TRUE), SDSAAC = max(sd(SAAC),SDmean(SDSAAC), na.rm = TRUE), SAAC_N = n(), # Phe, Lys
+    Phe = mean(Phe, na.rm = TRUE), SDPhe = max(sd(Phe),SDmean(SDPhe), na.rm = TRUE), Phe_N = n()) # Phe
+data.zoops.510$DepthRange <- "500-1000 m"
+  
+data.zoops.1015 <- subset(data.all, (Depth >= 1000 & Depth <= 1500) & 
+              (Type == "Zooplankton" & Size == "1-2 mm"))%>%
+  group_by(Group, Type, Location, .drop = TRUE) %>%
+  summarise(
+    SAA = mean(SAA, na.rm = TRUE), SDSAA = max(sd(SAA),SDmean(SDSAA), na.rm = TRUE), SAA_N = n(), # All SAAs
+    SAAB = mean(SAAB, na.rm = TRUE), SDSAAB = max(sd(SAAB),SDmean(SDSAAB), na.rm = TRUE), SAAB_N = n(), # Gly, Phe, Lys
+    SAAC = mean(SAAC, na.rm = TRUE), SDSAAC = max(sd(SAAC),SDmean(SDSAAC), na.rm = TRUE), SAAC_N = n(), # Phe, Lys
+    Phe = mean(Phe, na.rm = TRUE), SDPhe = max(sd(Phe),SDmean(SDPhe), na.rm = TRUE), Phe_N = n()) # Phe
+data.zoops.1015$DepthRange <- "1000-1500 m"
+
+data.zoops.avg <- rbind(data.zoops.25, data.zoops.510, data.zoops.1015)
+data.zoops.avg$DepthRange <- factor(data.zoops.avg$DepthRange, levels = c("200-500 m","500-1000 m","1000-1500 m"))
+
+## Now we'll melt the data into a long format for plotting
+
+data.parts.avg.long <-
+  melt(data.parts.avg,
+       id.vars = c("Group","Type","Location"),
+       measure.vars = c("SAA","SAAB","SAAC","Phe"),
+       variable.name = "SAAs", value.name = "Mean")
+data.parts.avg.long$SD <-
+      melt(data.parts.avg,
+           id.vars = c("Group","Type","Location"),
+           measure.vars = c("SDSAA","SDSAAB","SDSAAC","SDPhe"),
+           variable.name = "SAAs", value.name = "SD")$SD
+
+
+data.zoops.avg.long <-
+  melt(data.zoops.avg,
+       id.vars = c("Group","Type","Location","DepthRange"),
+       measure.vars = c("SAA","SAAB","SAAC","Phe"),
+       variable.name = "SAAs", value.name = "Mean")
+data.zoops.avg.long$SD <-
+      melt(data.zoops.avg,
+           id.vars = c("Group","Type","Location","DepthRange"),
+           measure.vars = c("SDSAA","SDSAAB","SDSAAC","SDPhe"),
+           variable.name = "SAAs", value.name = "SD")$SD
+
+# ## Plotting for 5 N
+# data.plots.avg.parts <- subset(data.parts.avg.long, Location == "5 N")
+# data.plots.zoops <- subset(data.zoops.avg.long, Location == "5 N")
+
+data.plots.avg.parts <- data.parts.avg.long
+data.plots.zoops <- data.zoops.avg.long
+
+plot.parts_zoops =
+  ggplot(data = data.plots.avg.parts,
+         aes(x = Mean, y = SAAs, xmin = Mean-SD, xmax = Mean+SD))+
+  geom_errorbarh(aes(xmin=Mean, xmax=Mean, color=Group), lty=2, height=0.7, show.legend = FALSE)+
+  geom_errorbarh(aes(color=Group), height=0, size=10, alpha=0.5, show.legend = FALSE)+
+  geom_ribbon(aes(fill = Group), alpha = 0.50, color = NA)+
+  geom_point(data = data.plots.zoops,
+             aes(x = Mean, y = SAAs, xmin = Mean-SD, xmax = Mean+SD,
+                 shape = DepthRange),
+             size = 1.5, stroke = 0.75)+
+  theme_light()+theme(text=element_text(family="serif"))+
+  theme(strip.text = element_text(size = 12, face = "bold"),
+        text=element_text(family="serif"))+
+  labs(shape="Zooplankton", fill="Source")+
+  scale_y_discrete(labels = c("Gly, Ser, Phe, Lys","Gly, Phe, Lys","Phe, Lys","Phe"))+
+  xlab(expression(delta^{15}*"N"[SAA]*" (\u2030)")) + ylab('Source Amino Acids') +
+  coord_cartesian(xlim=c(-3,12))+
+  # ggtitle("5 N")
+  facet_wrap(~ Location, nrow=3)
+
+plot.parts_zoops
+
+
+
+```
+
+We can generate some mixing models to show this is reflected in those results too, but for now let's move on.
+
+Before we move on, and while we have all of these data assembled, let's also plot profiles of TP vs depth using the same color schemes.
+
+```{r TP-vs-Depth, dpi=300, fig.width=7.5, fig.height = 5, cache=FALSE}
+
+TP_depth_plot <- function(
+    data.all,
+    sitename,
+    epochname = NULL
+){
+  
+  if(is.null(epochname)) {
+    data.plots.zoops <- subset(data.all, Type == "Zooplankton" & Event == "Night" & Group == "Mixed" & Location == sitename &
+                               (Size == "0.2-0.5 mm" | Size == "1-2 mm" | Size == "2-5 mm" | Size == ">5 mm"))
+  } else{
+    data.plots.zoops <- subset(data.all, Type == "Zooplankton" & Event == "Night" & Group == "Mixed" & Epoch == epochname & Location == sitename &
+                               (Size == "0.2-0.5 mm" | Size == "1-2 mm" | Size == "2-5 mm" | Size == ">5 mm"))
+  }
+  data.plots.zoops$Size <- factor(data.plots.zoops$Size, levels = c("0.2-0.5 mm","1-2 mm","2-5 mm",">5 mm"))
+    
+  data.plots.traps <- subset(data.all, Type == "Trap" & Location == sitename)
+  data.plots.parts <- subset(data.all, Type == "Particle" & Location == sitename)
+  
+  maxdepth <-
+    round(max(data.plots.zoops$Depth)+50, -2)
+  
+  ggplot()+
+    geom_smooth( # Particles
+      data = data.plots.parts,
+      aes(x = TPGlx, y = Depth, color = Sizecat, fill = Sizecat, group = Sizecat), 
+      orientation = "y", level=0.75, span=1.2)+
+    geom_point(
+      data = data.plots.parts,
+      aes(x = TPGlx, y = Depth, color = Sizecat, fill = Sizecat, group = Sizecat), 
+      size=1, shape=21, alpha=0.7)+
+    geom_point( # Sediment Traps
+      data = data.plots.traps,
+      aes(x = TPGlx, y = Depth, xmin = TPGlx-SDTPGlx, xmax = TPGlx+SDTPGlx, color = Sizecat, fill = Sizecat),
+      size = 1.5, stroke = 0.75, shape = 25)+
+    # geom_errorbarh(
+    #   data = data.plots.traps,
+    #   aes(x = TPGlx, y = Depth, xmin = TPGlx-SDTPGlx, xmax = TPGlx+SDTPGlx), 
+    #   height = 1, size = 0.5, linetype = 1, color = 'black')+
+    geom_point( # Zooplankton
+      data = data.plots.zoops,
+      aes(x = TPGlx, y = Depth, shape = Size),
+      color = "black", size = 1.5, stroke = 0.95)+
+    # geom_path(
+    #   data = data.plots.zoops,
+    #   aes(x = TPGlx, y = Depth, group = Size, inherit = FALSE),
+    #   color = "black", size = 1, linetype = "solid", alpha = 0.5)+
+    geom_smooth(
+      data = data.plots.zoops,
+      aes(x = TPGlx, y = Depth, lty = Size),
+      orientation = "y", level=0.95, span=0.9, color = "black", se = FALSE)+
+    # geom_errorbarh(
+    #   data = data.plots.zoops,
+    #   aes(x = TPGlx, y = Depth, xmin = TPGlx-SDTPGlx, xmax = TPGlx+SDTPGlx), 
+    #   height = 1, size = 0.5, linetype = 1, color = 'black')+
+    scale_y_reverse() + ylab('Depth (m)') +
+    scale_x_continuous(minor_breaks = seq(0,10,0.5), breaks = seq(0,10,1))+ 
+    xlim(0,5)+
+    xlab("Trophic Position") + 
+    labs(color = "Particles", fill="Particles", shape = "Zooplankton", lty = "Zooplankton")+
+    theme_light()+theme(strip.text.x = element_text(size = 8), 
+                        axis.title.x = element_blank(),
+                        axis.title.y = element_blank(),
+                        plot.title = element_text(size=12, hjust=0.5))+ 
+    coord_cartesian(expand = FALSE, ylim = c(maxdepth,0))+
+    scale_color_discrete(type = c("#F8766D", "#00BA38", "#619CFF","black"))+
+    scale_fill_discrete(type = c("#F8766D", "#00BA38", "#619CFF","goldenrod"))+
+    scale_shape_discrete(drop=FALSE)+
+    scale_linetype_discrete(drop=FALSE)+
+    ggtitle(paste(sitename,epochname))
+}
+
+# plot.PAP1 <-
+#   SAA_depth_plot(
+#     data.all,
+#     "PAP",
+#     1
+#   ) + ggtitle("PAP Epoch 1")
+plot.PAP3 <-
+  TP_depth_plot(
+    data.all,
+    "PAP",
+    3
+  ) + ggtitle("PAP Epoch 3")
+plot.OSP <-
+  TP_depth_plot(
+    data.all,
+    "OSP"
+  )
+plot.ALOHAS <-
+  TP_depth_plot(
+    data.all,
+    "ALOHA",
+    "Summer"
+  )
+plot.ALOHAW <-
+  TP_depth_plot(
+    data.all,
+    "ALOHA",
+    "Winter"
+  )
+plot.5N <-
+  TP_depth_plot(
+    data.all,
+    "5 N"
+  )
+plot.8N <-
+  TP_depth_plot(
+    data.all,
+    "8 N"
+  )
+plot.blank <-
+  ggplot+geom_blank()+theme_bw()+theme(panel.border=element_blank())
+
+ggarrange(
+  ggplot() + geom_blank() + ylab("Depth (m)"),
+  
+  ggarrange(plot.OSP,  plot.ALOHAS, plot.5N, 
+            plot.PAP3, plot.ALOHAW, plot.8N, 
+            ncol = 3, nrow=2,
+            common.legend = TRUE, legend="right"),
+  
+  ggplot() + geom_blank() + theme_void(),
+  ggplot() + geom_blank() + xlab(expression("TP"["Glx-Phe"])),
+  widths = c(0.03,1),
+  heights = c(1,0.05)
+)
+
+
+
+
+TP_depth_plot <- function(
+    data.all,
+    sitename,
+    epochname = NULL
+){
+  
+  if(is.null(epochname)) {
+    data.plots.zoops <- subset(data.all, Type == "Zooplankton" & Event == "Night" & Group == "Mixed" & Location == sitename &
+                               (Size == "0.2-0.5 mm" | Size == "1-2 mm" | Size == "2-5 mm" | Size == ">5 mm"))
+  } else{
+    data.plots.zoops <- subset(data.all, Type == "Zooplankton" & Event == "Night" & Group == "Mixed" & Epoch == epochname & Location == sitename &
+                               (Size == "0.2-0.5 mm" | Size == "1-2 mm" | Size == "2-5 mm" | Size == ">5 mm"))
+  }
+  data.plots.zoops$Size <- factor(data.plots.zoops$Size, levels = c("0.2-0.5 mm","1-2 mm","2-5 mm",">5 mm"))
+    
+  data.plots.traps <- subset(data.all, Type == "Trap" & Location == sitename)
+  data.plots.parts <- subset(data.all, Type == "Particle" & Location == sitename)
+  
+  maxdepth <-
+    round(max(data.plots.zoops$Depth)+50, -2)
+  
+  ggplot()+
+    geom_smooth( # Particles
+      data = data.plots.parts,
+      aes(x = TPAla, y = Depth, color = Sizecat, fill = Sizecat, group = Sizecat), 
+      orientation = "y", level=0.75, span=1.2)+
+    geom_point(
+      data = data.plots.parts,
+      aes(x = TPAla, y = Depth, color = Sizecat, fill = Sizecat, group = Sizecat), 
+      size=1, shape=21, alpha=0.7)+
+    geom_point( # Sediment Traps
+      data = data.plots.traps,
+      aes(x = TPAla, y = Depth, xmin = TPAla-SDTPAla, xmax = TPAla+SDTPAla, color = Sizecat, fill = Sizecat),
+      size = 1.5, stroke = 0.75, shape = 25)+
+    # geom_errorbarh(
+    #   data = data.plots.traps,
+    #   aes(x = TPAla, y = Depth, xmin = TPAla-SDTPAla, xmax = TPAla+SDTPAla), 
+    #   height = 1, size = 0.5, linetype = 1, color = 'black')+
+    geom_point( # Zooplankton
+      data = data.plots.zoops,
+      aes(x = TPAla, y = Depth, shape = Size),
+      color = "black", size = 1.5, stroke = 0.95)+
+    # geom_path(
+    #   data = data.plots.zoops,
+    #   aes(x = TPAla, y = Depth, group = Size, inherit = FALSE),
+    #   color = "black", size = 1, linetype = "solid", alpha = 0.5)+
+    geom_smooth(
+      data = data.plots.zoops,
+      aes(x = TPAla, y = Depth, lty = Size),
+      orientation = "y", level=0.95, span=0.9, color = "black", se = FALSE)+
+    # geom_errorbarh(
+    #   data = data.plots.zoops,
+    #   aes(x = TPAla, y = Depth, xmin = TPAla-SDTPAla, xmax = TPAla+SDTPAla), 
+    #   height = 1, size = 0.5, linetype = 1, color = 'black')+
+    scale_y_reverse() + ylab('Depth (m)') +
+    scale_x_continuous(minor_breaks = seq(0,10,0.5), breaks = seq(0,10,1))+ 
+    xlim(0,5)+
+    xlab("Trophic Position") + 
+    labs(color = "Particles", fill="Particles", shape = "Zooplankton", lty = "Zooplankton")+
+    theme_light()+theme(strip.text.x = element_text(size = 8), 
+                        axis.title.x = element_blank(),
+                        axis.title.y = element_blank(),
+                        plot.title = element_text(size=12, hjust=0.5))+ 
+    coord_cartesian(expand = FALSE, ylim = c(maxdepth,0))+
+    scale_color_discrete(type = c("#F8766D", "#00BA38", "#619CFF","black"))+
+    scale_fill_discrete(type = c("#F8766D", "#00BA38", "#619CFF","goldenrod"))+
+    scale_shape_discrete(drop=FALSE)+
+    scale_linetype_discrete(drop=FALSE)+
+    ggtitle(paste(sitename,epochname))
+}
+
+# plot.PAP1 <-
+#   SAA_depth_plot(
+#     data.all,
+#     "PAP",
+#     1
+#   ) + ggtitle("PAP Epoch 1")
+plot.PAP3 <-
+  TP_depth_plot(
+    data.all,
+    "PAP",
+    3
+  ) + ggtitle("PAP Epoch 3")
+plot.OSP <-
+  TP_depth_plot(
+    data.all,
+    "OSP"
+  )
+plot.ALOHAS <-
+  TP_depth_plot(
+    data.all,
+    "ALOHA",
+    "Summer"
+  )
+plot.ALOHAW <-
+  TP_depth_plot(
+    data.all,
+    "ALOHA",
+    "Winter"
+  )
+plot.5N <-
+  TP_depth_plot(
+    data.all,
+    "5 N"
+  )
+plot.8N <-
+  TP_depth_plot(
+    data.all,
+    "8 N"
+  )
+plot.blank <-
+  ggplot+geom_blank()+theme_bw()+theme(panel.border=element_blank())
+
+ggarrange(
+  ggplot() + geom_blank() + ylab("Depth (m)"),
+  
+  ggarrange(plot.OSP,  plot.ALOHAS, plot.5N, 
+            plot.PAP3, plot.ALOHAW, plot.8N, 
+            ncol = 3, nrow=2,
+            common.legend = TRUE, legend="right"),
+  
+  ggplot() + geom_blank() + theme_void(),
+  ggplot() + geom_blank() + xlab(expression("TP"["Ala-Phe"])),
+  widths = c(0.03,1),
+  heights = c(1,0.05)
+)
+
+
+```
+
+
+## (2) Do we see a relationship between source amino acid $\dN$ values and $\TPGlx$ in zooplankton at all sites? {-}
+
+In short, yes. We have another documented that looks into this exclusively. That analysis estimates $\Delta^{15}N_{Ser} = 3.7‰$, $\Delta^{15}N_{Gly} = 2.4‰$, and $\Delta^{15}N_{Lys} = 1.2‰$. No significant slope is observed for $\dNPhe$. See D15N_Regression_Analysis.html for more details.
+
+## (3) Can trophic discrimination alone account for the discrepancies identified in section 1? {-}
+
+The last piece we'd like to address is whether or not trophic discrimination can reasonably explain the high $\dN$ values we measure in Ser and Gly relative to organic matter sources. To do this we will follow these steps:
+
+-	Suppose $\dNPhe$ and $\dNLys$ values provide an accurate representation of organic matter supply. We will use this to identify the dominant organic matter source within a specific depth range at each location.
+-	We will then compare the average $\dN$ values of Ser, Gly, and Lys in that organic matter source to zooplankton within the same depth range, calculating the $\Delta\delta^{15}N$ value.
+-	We will then compare TP(Ala-Phe) between the same source source and zooplankton, calculating $\Delta TP$.
+- Finally, we will calculate the necessary amount of trophic discriminatin for each amino acid per trophic level, and compare that to estimates of TDF determined previously.
+
+Let's run through this for each location.
+
+### Ocean Station Papa {-}
+
+At Station Papa we'll look at the 1-2 mm zooplankton below 200 m. These animals appear to be reliant on large particles (though it could be some combination of small and surface particles). 
+
+```{r TD_assessment_OSP}
+
+data.TD.zoop <- subset(data.all, 
+                       Location == "OSP" &
+                         Size == "1-2 mm" &
+                         Event == "Night" &
+                         Depth > 200)
+
+data.TD.source <- subset(data.all,
+                         Location == "OSP" &
+                           Group == "Large" &
+                           Depth > 200)
+avg.TD.source <- colMeans(data.TD.source[c("Ser","Gly","Lys","Phe","TPAla")])
+
+
+data.TD <- data.TD.zoop[c("Depth","Ser","Gly","Lys","Phe","TPAla")]
+
+for (i in 1:nrow(data.TD)) {
+  data.TD[i,c("Ser","Gly","Lys","Phe","TPAla")] <-
+    data.TD.zoop[i,c("Ser","Gly","Lys","Phe","TPAla")] - avg.TD.source
+}
+
+data.TD$TDFSer <- data.TD$Ser / data.TD$TPAla
+data.TD$TDFGly <- data.TD$Gly / data.TD$TPAla
+data.TD$TDFLys <- data.TD$Lys / data.TD$TPAla
+data.TD$TDFPhe <- data.TD$Phe / data.TD$TPAla
+
+avg.TD.OSP <- round(colMeans(data.TD[c("Ser","Gly","Lys","Phe","TPAla",
+                             "TDFSer","TDFGly","TDFLys","TDFPhe")]),1)
+
+```
+
+Ser: The average difference between $\dN$ in large particles and zooplankton was `r avg.TD.OSP["Ser"]`‰ over `r avg.TD.OSP["TPAla"]` trophic levels. This would require a TDF of `r avg.TD.OSP["TDFSer"]`‰.
+
+Gly: The average difference between $\dN$ in large particles and zooplankton was `r avg.TD.OSP["Gly"]`‰ over `r avg.TD.OSP["TPAla"]` trophic levels. This would require a TDF of `r avg.TD.OSP["TDFGly"]`‰.
+
+Lys: The average difference between $\dN$ in large particles and zooplankton was `r avg.TD.OSP["Lys"]`‰ over `r avg.TD.OSP["TPAla"]` trophic levels. This would require a TDF of `r avg.TD.OSP["TDFLys"]`‰.
+
+Phe: The average difference between $\dN$ in large particles and zooplankton was `r avg.TD.OSP["Phe"]`‰ over `r avg.TD.OSP["TPAla"]` trophic levels. This would require a TDF of `r avg.TD.OSP["TDFPhe"]`‰.
+
+### Station ALOHA - Summer {-}
+
+At ALOHA in the Summer we'll look at the 1-2 mm zooplankton below 300 m. These animals appear to be reliant on surface POM. 
+
+```{r TD_assessment_ALOHAS}
+
+data.TD.zoop <- subset(data.all, 
+                       Location == "ALOHA" &
+                         Epoch == "Summer" &
+                         Size == "1-2 mm" &
+                         Event == "Night" &
+                         Depth > 300)
+
+data.TD.source <- subset(data.all,
+                         Location == "ALOHA S" &
+                           Group == "Surface")
+avg.TD.source <- colMeans(data.TD.source[c("Ser","Gly","Lys","Phe","TPAla")])
+
+
+data.TD <- data.TD.zoop[c("Depth","Ser","Gly","Lys","Phe","TPAla")]
+
+for (i in 1:nrow(data.TD)) {
+  data.TD[i,c("Ser","Gly","Lys","Phe","TPAla")] <-
+    data.TD.zoop[i,c("Ser","Gly","Lys","Phe","TPAla")] - avg.TD.source
+}
+
+data.TD$TDFSer <- data.TD$Ser / data.TD$TPAla
+data.TD$TDFGly <- data.TD$Gly / data.TD$TPAla
+data.TD$TDFLys <- data.TD$Lys / data.TD$TPAla
+data.TD$TDFPhe <- data.TD$Phe / data.TD$TPAla
+
+avg.TD.ALOHAS <- round(colMeans(data.TD[c("Ser","Gly","Lys","Phe","TPAla",
+                             "TDFSer","TDFGly","TDFLys","TDFPhe")]),1)
+
+```
+
+Ser: The average difference between $\dN$ in large particles and zooplankton was `r avg.TD.ALOHAS["Ser"]`‰ over `r avg.TD.ALOHAS["TPAla"]` trophic levels. This would require a TDF of `r avg.TD.ALOHAS["TDFSer"]`‰.
+
+Gly: The average difference between $\dN$ in large particles and zooplankton was `r avg.TD.ALOHAS["Gly"]`‰ over `r avg.TD.ALOHAS["TPAla"]` trophic levels. This would require a TDF of `r avg.TD.ALOHAS["TDFGly"]`‰.
+
+Lys: The average difference between $\dN$ in large particles and zooplankton was `r avg.TD.ALOHAS["Lys"]`‰ over `r avg.TD.ALOHAS["TPAla"]` trophic levels. This would require a TDF of `r avg.TD.ALOHAS["TDFLys"]`‰.
+
+Phe: The average difference between $\dN$ in large particles and zooplankton was `r avg.TD.ALOHAS["Phe"]`‰ over `r avg.TD.ALOHAS["TPAla"]` trophic levels. This would require a TDF of `r avg.TD.ALOHAS["TDFPhe"]`‰.
+
+### Station ALOHA - Winter {-}
+
+At ALOHA in the Winter we'll look at the 1-2 mm zooplankton above 200 m. These animals appear to be reliant on surface POM. 
+
+```{r TD_assessment_ALOHAW}
+
+data.TD.zoop <- subset(data.all, 
+                       Location == "ALOHA" &
+                         Epoch == "Winter" &
+                         Size == "1-2 mm" &
+                         Event == "Night" &
+                         Depth < 200)
+
+data.TD.source <- subset(data.all,
+                         Location == "ALOHA W" &
+                           Group == "Surface")
+avg.TD.source <- colMeans(data.TD.source[c("Ser","Gly","Lys","Phe","TPAla")])
+
+
+data.TD <- data.TD.zoop[c("Depth","Ser","Gly","Lys","Phe","TPAla")]
+
+for (i in 1:nrow(data.TD)) {
+  data.TD[i,c("Ser","Gly","Lys","Phe","TPAla")] <-
+    data.TD.zoop[i,c("Ser","Gly","Lys","Phe","TPAla")] - avg.TD.source
+}
+
+data.TD$TDFSer <- data.TD$Ser / data.TD$TPAla
+data.TD$TDFGly <- data.TD$Gly / data.TD$TPAla
+data.TD$TDFLys <- data.TD$Lys / data.TD$TPAla
+data.TD$TDFPhe <- data.TD$Phe / data.TD$TPAla
+
+avg.TD.ALOHAW <- round(colMeans(data.TD[c("Ser","Gly","Lys","Phe","TPAla",
+                             "TDFSer","TDFGly","TDFLys","TDFPhe")]),1)
+
+```
+
+Ser: The average difference between $\dN$ in large particles and zooplankton was `r avg.TD.ALOHAW["Ser"]`‰ over `r avg.TD.ALOHAW["TPAla"]` trophic levels. This would require a TDF of `r avg.TD.ALOHAW["TDFSer"]`‰.
+
+Gly: The average difference between $\dN$ in large particles and zooplankton was `r avg.TD.ALOHAW["Gly"]`‰ over `r avg.TD.ALOHAW["TPAla"]` trophic levels. This would require a TDF of `r avg.TD.ALOHAW["TDFGly"]`‰.
+
+Lys: The average difference between $\dN$ in large particles and zooplankton was `r avg.TD.ALOHAW["Lys"]`‰ over `r avg.TD.ALOHAW["TPAla"]` trophic levels. This would require a TDF of `r avg.TD.ALOHAW["TDFLys"]`‰.
+
+Phe: The average difference between $\dN$ in large particles and zooplankton was `r avg.TD.ALOHAW["Phe"]`‰ over `r avg.TD.ALOHAW["TPAla"]` trophic levels. This would require a TDF of `r avg.TD.ALOHAW["TDFPhe"]`‰.
+
+### 8N {-}
+
+At 8N the deepest 1-2 mm zooplankton (1000-1500 m  net) appear to be completely reliant on small POM. Let's consider those.
+
+```{r TD_assessment_8N}
+
+data.TD.zoop <- subset(data.all, 
+                       Location == "8 N" &
+                         Size == "1-2 mm" &
+                         Event == "Night" &
+                         Depth > 1000)
+
+data.TD.source <- subset(data.all,
+                         Location == "8 N" &
+                           Group == "Small" &
+                           Depth > 1000)
+avg.TD.source <- colMeans(data.TD.source[c("Ser","Gly","Lys","Phe","TPAla")])
+
+
+data.TD <- data.TD.zoop[c("Depth","Ser","Gly","Lys","Phe","TPAla")]
+
+for (i in 1:nrow(data.TD)) {
+  data.TD[i,c("Ser","Gly","Lys","Phe","TPAla")] <-
+    data.TD.zoop[i,c("Ser","Gly","Lys","Phe","TPAla")] - avg.TD.source
+}
+
+data.TD$TDFSer <- data.TD$Ser / data.TD$TPAla
+data.TD$TDFGly <- data.TD$Gly / data.TD$TPAla
+data.TD$TDFLys <- data.TD$Lys / data.TD$TPAla
+data.TD$TDFPhe <- data.TD$Phe / data.TD$TPAla
+
+avg.TD.8N <- round(colMeans(data.TD[c("Ser","Gly","Lys","Phe","TPAla",
+                             "TDFSer","TDFGly","TDFLys","TDFPhe")]),1)
+
+```
+
+Ser: The average difference between $\dN$ in large particles and zooplankton was `r avg.TD.8N["Ser"]`‰ over `r avg.TD.8N["TPAla"]` trophic levels. This would require a TDF of `r avg.TD.8N["TDFSer"]`‰.
+
+Gly: The average difference between $\dN$ in large particles and zooplankton was `r avg.TD.8N["Gly"]`‰ over `r avg.TD.8N["TPAla"]` trophic levels. This would require a TDF of `r avg.TD.8N["TDFGly"]`‰.
+
+Lys: The average difference between $\dN$ in large particles and zooplankton was `r avg.TD.8N["Lys"]`‰ over `r avg.TD.8N["TPAla"]` trophic levels. This would require a TDF of `r avg.TD.8N["TDFLys"]`‰.
+
+Phe: The average difference between $\dN$ in large particles and zooplankton was `r avg.TD.8N["Phe"]`‰ over `r avg.TD.8N["TPAla"]` trophic levels. This would require a TDF of `r avg.TD.8N["TDFPhe"]`‰.
+
+### 5N {-}
+
+At 5N most samples are intermediate between end members, except for the shallowest samples above 50 m which rely on surface POM. We'll use those.
+
+```{r TD_assessment_5N}
+
+data.TD.zoop <- subset(data.all, 
+                       Location == "5 N" &
+                         Size == "1-2 mm" &
+                         Event == "Night" &
+                         Depth < 50)
+
+data.TD.source <- subset(data.all,
+                         Location == "5 N" &
+                           Group == "Surface" &
+                           Depth < 50)
+avg.TD.source <- colMeans(data.TD.source[c("Ser","Gly","Lys","Phe","TPAla")])
+
+
+data.TD <- data.TD.zoop[c("Depth","Ser","Gly","Lys","Phe","TPAla")]
+
+for (i in 1:nrow(data.TD)) {
+  data.TD[i,c("Ser","Gly","Lys","Phe","TPAla")] <-
+    data.TD.zoop[i,c("Ser","Gly","Lys","Phe","TPAla")] - avg.TD.source
+}
+
+data.TD$TDFSer <- data.TD$Ser / data.TD$TPAla
+data.TD$TDFGly <- data.TD$Gly / data.TD$TPAla
+data.TD$TDFLys <- data.TD$Lys / data.TD$TPAla
+data.TD$TDFPhe <- data.TD$Phe / data.TD$TPAla
+
+avg.TD.5N <- round(colMeans(data.TD[c("Ser","Gly","Lys","Phe","TPAla",
+                             "TDFSer","TDFGly","TDFLys","TDFPhe")]),1)
+
+```
+
+Ser: The average difference between $\dN$ in large particles and zooplankton was `r avg.TD.5N["Ser"]`‰ over `r avg.TD.5N["TPAla"]` trophic levels. This would require a TDF of `r avg.TD.5N["TDFSer"]`‰.
+
+Gly: The average difference between $\dN$ in large particles and zooplankton was `r avg.TD.5N["Gly"]`‰ over `r avg.TD.5N["TPAla"]` trophic levels. This would require a TDF of `r avg.TD.5N["TDFGly"]`‰.
+
+Lys: The average difference between $\dN$ in large particles and zooplankton was `r avg.TD.5N["Lys"]`‰ over `r avg.TD.5N["TPAla"]` trophic levels. This would require a TDF of `r avg.TD.5N["TDFLys"]`‰.
+
+Phe: The average difference between $\dN$ in large particles and zooplankton was `r avg.TD.5N["Phe"]`‰ over `r avg.TD.5N["TPAla"]` trophic levels. This would require a TDF of `r avg.TD.5N["TDFPhe"]`‰.
+
+### Synthesizing results {-}
+
+The following table shows the change in Ser and Gly $\dN$ values per trophic level that would be necessary to explain their high $\dN$ values relative to organic matter sources. Though we look at zooplankton that rely on different organic matter sources from an variety of depths and locations, the necessary TDFs take a fairly narrow range of values. TDF(Ser) ranges from 1.9‰ (8 N) to 3.9‰ (Station Papa), with a mean value of 2.9‰. TDF(Gly) ranges from 0.9‰ (5 N) to 3.1‰ (Station Papa), with a mean value of 1.8‰. All of these values are within one standard deviation of the mean values estimated for marine metazoans in controlled feeding studies. This suggests that trophic discrimination is sufficient to explain high $\dN$ values in Ser and Gly relative to organic matter source and $\dN$ values of Phe and Lys.
+
+```{r}
+avg.TD.all <-
+  round(
+    colMeans(
+      rbind(
+        avg.TD.OSP[c("TDFSer","TDFGly","TDFLys","TDFPhe")],
+        avg.TD.ALOHAS[c("TDFSer","TDFGly","TDFLys","TDFPhe")],
+        avg.TD.ALOHAW[c("TDFSer","TDFGly","TDFLys","TDFPhe")],
+        avg.TD.8N[c("TDFSer","TDFGly","TDFLys","TDFPhe")],
+        avg.TD.5N[c("TDFSer","TDFGly","TDFLys","TDFPhe")]
+      )
+    ), 1
+  )
+
+summary.table <-
+  rbind(
+    avg.TD.OSP[c("TDFSer","TDFGly","TDFLys","TDFPhe")],
+    avg.TD.ALOHAS[c("TDFSer","TDFGly","TDFLys","TDFPhe")],
+    avg.TD.ALOHAW[c("TDFSer","TDFGly","TDFLys","TDFPhe")],
+    avg.TD.8N[c("TDFSer","TDFGly","TDFLys","TDFPhe")],
+    avg.TD.5N[c("TDFSer","TDFGly","TDFLys","TDFPhe")],
+    avg.TD.all,
+    paste(c(DN.McMahon$Ser,DN.McMahon$Gly,DN.McMahon$Lys,DN.McMahon$Phe),
+          c(DN.McMahon$SDSer,DN.McMahon$SDGly,DN.McMahon$SDLys,DN.McMahon$SDPhe),
+          sep = " ± ")
+  )
+
+row.names(summary.table) <-
+  c("Station Papa",
+    "ALOHA Summer",
+    "ALOHA Winter",
+    "8 N",
+    "5 N",
+    "Average",
+    "Feeding Studies")
+
+datatable(summary.table)
+```
+
+Though this is a somewhat rough assessment, this analysis can be conducted more robustly in the future by basing it on quantitative results from mixing models if it would benefit the study.
+
+# Calculating some simple metrics for results section {-}
+
+On average, how much higher are d15N values in zooplankton than sediment traps? To answer this question, we'll calculate d15N of zooplankton and sediment traps within 100 m depth bins and then take the difference.
+
+```{r}
+
+# Testing significance of depth dependence in 1-2 mm zooplankton
+noquote("Testing significance of depth dependence in 1-2 mm zooplankton")
+
+data.zoops <- subset(data.all, Type == "Zooplankton" & Size == "1-2 mm")
+model <- lm(SAA ~ Depth + interaction(Location,Epoch), data=data.zoops)
+anova(model)
+# plot(allEffects(model))
+
+ggplot(
+  data = data.zoops,
+  aes(y = SAA, x = Depth, color = Type, shape = Type))+
+  geom_point()+
+  geom_smooth(method = "lm")+
+  facet_wrap(~ interaction(Location,Epoch))+
+  coord_flip()+
+  scale_x_reverse()
+
+# Testing significance of depth dependence in 1-2 mm zooplankton
+noquote("Testing significance of depth dependence in 1-2 mm zooplankton")
+
+data.zoops <- subset(data.all, Type == "Zooplankton" & Size == "1-2 mm")
+model <- lm(SAAC ~ Depth + interaction(Location,Epoch), data=data.zoops)
+anova(model)
+# plot(allEffects(model))
+
+ggplot(
+  data = data.zoops,
+  aes(y = SAAC, x = Depth, color = Type, shape = Type))+
+  geom_point()+
+  geom_smooth(method = "lm")+
+  facet_wrap(~ interaction(Location,Epoch))+
+  coord_flip()+
+  scale_x_reverse()
+
+# Testing zoops vs traps for 4 SAA average
+noquote("Testing zoops vs traps for 4 SAA average")
+
+data.zoops.traps <- subset(data.all, (Location == "OSP" | (Location == "PAP" & Epoch == 3)) & (Type == "Zooplankton" | Type == "Trap") & Depth > 100)
+model <- lm(SAA ~ Depth + Location + Type, data=data.zoops.traps)
+anova(model)
+plot(allEffects(model))
+
+ggplot(
+  data = data.zoops.traps,
+  aes(y = SAA, x = Depth, color = Type, shape = Type))+
+  geom_point()+
+  geom_smooth(method = "lm")+
+  facet_wrap(~ Location)+
+  coord_flip()+
+  scale_x_reverse()
+
+# Tesing zoops vs traps for Phe, Lys average
+noquote("Tesing zoops vs traps for Phe, Lys average")
+
+data.zoops.traps <- subset(data.all, (Location == "OSP" | (Location == "PAP" & Epoch == 3)) & (Type == "Zooplankton" | Type == "Trap") & Depth > 100)
+model <- lm(SAAC ~ Depth + Location + Type, data=data.zoops.traps)
+anova(model)
+plot(allEffects(model))
+
+ggplot(
+  data = data.zoops.traps,
+  aes(y = SAAC, x = Depth, color = Type, shape = Type))+
+  geom_point()+
+  geom_smooth(method = "lm")+
+  facet_wrap(~ Location)+
+  coord_flip()+
+  scale_x_reverse()
+
+```
+
+
+
+
+
+
+
