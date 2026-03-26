@@ -1,0 +1,4332 @@
+---
+title: "Comparing fod web model results from different sites"
+author: "Connor Shea"
+date: "`r format(Sys.Date(), '%B %d, %Y')`"
+output: 
+  #html_document: 
+  bookdown::html_document2:  
+    self-contained: yes
+    theme: cerulean #paper #cosmo #journal #readable
+    toc: true
+    smooth_scroll: true
+    toc_depth: 3
+    toc_float: true
+    number_sections: true
+    fig_caption: yes
+    code_folding: hide
+bibliography: Utilities/MesoPelaZooAA.bib
+csl: Utilities/LnO.csl
+link-citations: yes
+---
+
+```{r setup, echo=FALSE, warning=FALSE}
+## This chunk sets up a working directory, loads packages, defines a couple functions, and sets global chunk options for the .Rmd document
+
+# clean up
+rm(list=ls()) 
+
+# fresh start? If FALSE (select 2 in hard bracket), will only rerun a chunk if
+# changes are detected within the text of that chunk.
+rmCache <- c(TRUE, FALSE)[2] 
+tfn <- knitr::current_input()              # name of this file
+tfn <- substr(tfn, 1, nchar(tfn)-4)        # Remove the ".Rmd"
+tfn_cache <- paste0("Caches/", tfn, "_cache")         # Append "_cache" to it
+tfn_figures <- paste0("Figures/", tfn, "_figures")         # Append "_figures" to it
+if (rmCache) {
+  if (file.exists(tfn_cache))                # If the cache exists...
+    unlink(tfn_cache, recursive=TRUE)        # ...delete it.
+}
+
+## load packages quietly
+shhh <- suppressPackageStartupMessages # It's a library, so shhh!
+want <- c("knitr", 
+          "readxl", # for reading xl files
+          "MASS", # some statistics including lda
+          "vegan", # ecology statistics
+          "FactoMineR", # includes PCA function and utilities
+          "factoextra", # extra utilities for FactoMineR
+          "runjags", # To run Bayesian models
+          "TruncatedDistributions", # To generate truncate porbability distributions
+          "coda",  
+          "DT", # makes nice sortable tables
+          "openxlsx", # writes to .xlsx files
+          "compositions", 
+          "kableExtra",
+          "zeallot", 
+          "magrittr", 
+          "DirichletReg", 
+          "Ternary", 
+          "png",
+          "ggplot2",
+          "ggpubr",
+          "ggstance", # for vertical position dodging
+          "ggtern", # for ternary plots in ggplot2
+          "ggforce", # for specific extra plotting capabilities (facet_row())
+          "plotly",
+          "gridExtra",
+          "graphics",
+          "reshape2",
+          "dplyr",
+          "effects",
+          "ggrepel",
+          "scales"
+          )
+for (pkg in want) shhh(library(pkg, character.only=TRUE))
+
+# set some chunk options
+gr <- (1+sqrt(5))/2 # golden ratio, for figures
+opts_chunk$set(comment="  ",
+               # fig.asp=0.9/gr,       # <--- gr used here
+               fig.align="center",
+               # fig.width=5,
+               out.width="95%",
+               dpi=96, # set to 300 for important figures
+               dev="png", # png, svg, pdf, jpg, tiff
+               #echo=FALSE,
+               cache=c(TRUE, FALSE)[2], 
+               cache.path = paste0(tfn_cache,"/"),
+               fig.path = paste0(tfn_figures,"/"),
+               eval.after="fig.cap", # for dynamic captions
+               collapse=TRUE
+               )
+
+## a couple of lines we need to run every time we knit
+# setting the ggplot theme
+theme_set(theme_classic2()+
+            theme(panel.grid.major.x = element_line(colour = "grey95"),
+                  panel.grid.major.y = element_line(colour = "grey95")))
+# defining a ggplot object to remove the x axis
+no.x.axis <- theme(axis.title.x=element_blank(),
+                   axis.text.x=element_blank(),
+                   axis.ticks.x=element_blank())
+# defining a ggplot object to remove the y axis
+no.y.axis <- theme(axis.title.y=element_blank(),
+                   axis.text.y=element_blank(),
+                   axis.ticks.y=element_blank())
+
+source("Functions/calcSDs.R")         # SDmean() and SDsum()
+source("Functions/Post_Mode.R")       # post.mode()
+```  
+
+<!-- The following commands provide a shorthand for common symbols when used in math mode. -->
+
+\newcommand{\um}{\ \mu \mathrm{ m}}
+\newcommand{\mm}{\mathrm{\ mm}}
+\newcommand{\m}{\mathrm{\ m}}
+\newcommand{\N}{\mathrm{^{15}\text{N}}}
+\newcommand{\dN}{\mathrm{\delta^{15}\text{N}}}
+\newcommand{\dNAA}{\mathrm{\delta^{15}\text{N}_\text{AA}}}
+\newcommand{\dNSAA}{\mathrm{\delta^{15}\text{N}_\text{SAA}}}
+\newcommand{\dNTAA}{\mathrm{\delta^{15}\text{N}_\text{TAA}}}
+\newcommand{\dNtr}{\mathrm{\delta^{15}\text{N}_\text{tr}}}
+\newcommand{\dNsrc}{\mathrm{\delta^{15}\text{N}_\text{src}}}
+\newcommand{\dNphe}{\mathrm{\delta^{15}N_{phe}}}
+\newcommand{\dNthr}{\mathrm{\delta^{15}N_{thr}}}
+\newcommand{\dNala}{\mathrm{\delta^{15}N_{ala}}}
+\newcommand{\dNglx}{\mathrm{\delta^{15}N_{glx}}}
+\newcommand{\dNThrPhe}{\mathrm{\delta^{15}N_{thr-phe}}}
+\newcommand{\dNAlaPhe}{\mathrm{\delta^{15}N_{ala-phe}}}
+\newcommand{\dNglxphe}{\mathrm{\delta^{15}N_{glx-phe}}}
+\newcommand{\DN}{\mathrm{\Delta^{15}\text{N}}}
+\newcommand{\DNAA}{\mathrm{\Delta^{15}\text{N}_\text{AA}}}
+\newcommand{\C}{\mathrm{^{13}\text{C}}}
+\newcommand{\dC}{\mathrm{\delta^{13}\text{C}}}
+\newcommand{\dCAA}{\mathrm{\delta^{13}\text{C}_\text{AA}}}
+\newcommand{\dCEAA}{\mathrm{\delta^{13}\text{C}_\text{EAA}}}
+\newcommand{\dCNAA}{\mathrm{\delta^{13}\text{C}_\text{NAA}}}
+\newcommand{\permil}{‰}
+\newcommand{\degree}{°}
+\newcommand{\TP}{\mathrm{TP}}
+\newcommand{\TPala}{\mathrm{TP_{ala-phe}}}
+\newcommand{\TPglx}{\mathrm{TP_{glx-phe}}}
+\newcommand{\TPts}{\mathrm{TP_{tr-src}}}
+\newcommand{\dTP}{\mathrm{\Delta TP_{ala-glx}}}
+
+# Summary {-}  
+
+Here we will be comparing the model results from all locations across the North Pacific. We will want to produce the following comparison plots.
+
+    - Δ15N vaues at all sites
+    - TP of 1-2 mm zooplankton at all sites
+    - Mixing coefficients for 1-2 mm zooplankton st all sites
+    - SAA vs depth plots at all sites
+    
+First we need to import the data from prior model runs.
+
+```{r load-data, cache=TRUE}
+path <- dirname(rstudioapi::getActiveDocumentContext()$path)
+
+load(paste(path,"/Data/OMSM_posteriors_OSP.RData",sep=""))
+posts.OSP <- posts
+posts.long.OSP <- posts.long
+data.all.OSP <- Data.all
+# data.parts.OSP <- data.avg.parts
+# data.parts.OSP$Location <- "OSP"
+load(paste(path,"/Data/OMSM_posteriors_ALOHA-Summer.RData",sep=""))
+posts.ALOHAS <- posts
+posts.long.ALOHAS <- posts.long
+data.all.ALOHAS <- subset(Data.all, Location == "ALOHA S")
+# data.parts.ALOHAS <- data.avg.parts
+# data.parts.ALOHAS$Location <- "ALOHA S"
+load(paste(path,"/Data/OMSM_posteriors_ALOHA-Winter.RData",sep=""))
+posts.ALOHAW <- posts
+posts.long.ALOHAW <- posts.long
+data.all.ALOHAW <- subset(Data.all, Location == "ALOHA W")
+# data.parts.ALOHAW <- data.avg.parts
+# data.parts.ALOHAW$Location <- "ALOHA W"
+load(paste(path,"/Data/OMSM_posteriors_8N.RData",sep=""))
+posts.8N <- posts
+posts.long.8N <- posts.long
+data.all.8N <- Data.all
+# data.parts.8N <- data.avg.parts
+# data.parts.8N$Location <- "8 N"
+load(paste(path,"/Data/OMSM_posteriors_5N.RData",sep=""))
+posts.5N <- posts
+posts.long.5N <- posts.long
+data.all.5N <- Data.all
+# data.parts.5N <- data.avg.parts
+# data.parts.5N$Location <- "5 N"
+load(paste(path,"/Data/OMSM_posteriors_PAP.RData",sep=""))
+posts.PAP <- posts
+posts.long.PAP <- posts.long
+data.all.PAP <- Data.all
+# data.parts.5N <- data.avg.parts
+# data.parts.5N$Location <- "5 N"
+
+data.all <- 
+  rbind(
+    data.all.5N,
+    data.all.8N,
+    data.all.ALOHAS,
+    data.all.ALOHAW,
+    data.all.OSP,
+    data.all.PAP
+  )
+
+
+
+# There are also some vectors we need to define
+# Indicate the name of the column describing the organic matter source to which
+# each sample belongs
+# Source_Variable <- "Source"
+# Indicate the names representing each possible source of organic matter in the
+# order in which you would like the referenced
+Sources <- c("Surface","Large","Small")
+
+# List the name of any additional variables that should be stored for analysis
+Additional_variables <- c("Location","Epoch","Event","Size","Depth","Type")
+
+# variables <- c(Source_Variable, Additional_variables)
+variables <- c(Additional_variables)
+
+
+```
+
+# Mixing Coefficient Depth Profiles {-}
+
+First we'll try and make a full page figure of all model results from all locations.
+
+```{r f_depth_profiles, DPI = 300, fig.width=8.5, fig.height=10, cache=FALSE}
+# for (i in c("5 N","8 N","ALOHA S","ALOHA W","OSP")) {
+# Making master data frames including all locations
+# Also putting those into long format for plotting
+sizes <- c("0.06-0.2 mm", "0.2-0.5 mm", "1-2 mm", "2-5 mm", ">5 mm",
+           "Oithonid", "Harpactacoid", "Pleuromamma", "Peuromamma", "Ostracod", "Oncaeid", "Gaussia", "Chaetognath","Radiolarian", "Metridia", "Neocalanus","Gaetanus")
+f.mode <-
+  subset(
+  bind_rows(
+    posts.5N$f$mode[c(variables,"Surface","Large","Small")],
+    posts.8N$f$mode[c(variables,"Surface","Large","Small")],
+    posts.ALOHAS$f$mode[c(variables,"Surface","Large","Small")],
+    posts.ALOHAW$f$mode[c(variables,"Surface","Large","Small")],
+    posts.OSP$f$mode[c(variables,"Surface","Large","Small")],
+    posts.PAP$f$mode[c(variables,"Surface","Large","Small")]),
+  Size == "0.2-0.5 mm" | Size == "1-2 mm" | Size == "2-5 mm" | Size == ">5 mm")# & Location == i)
+f.mode.long <-
+  melt(f.mode,
+       id.vars = c(variables),
+       variable.name = "Source",
+       value.name = "f")
+f.mode.long$Size <- factor(f.mode.long$Size, levels = sizes)
+f.HDI95 <-
+  subset(
+    bind_rows(
+    posts.5N$f$HDI95[c(variables,"Surface","Large","Small")],
+    posts.8N$f$HDI95[c(variables,"Surface","Large","Small")],
+    posts.ALOHAS$f$HDI95[c(variables,"Surface","Large","Small")],
+    posts.ALOHAW$f$HDI95[c(variables,"Surface","Large","Small")],
+    posts.OSP$f$HDI95[c(variables,"Surface","Large","Small")],
+    posts.PAP$f$HDI95[c(variables,"Surface","Large","Small")]),
+  Size == "0.2-0.5 mm" | Size == "1-2 mm" | Size == "2-5 mm" | Size == ">5 mm")# & Location == i)
+f.HDI95.long <-
+  melt(f.HDI95,
+       id.vars = c(variables),
+       variable.name = "Source",
+       value.name = "f")
+f.HDI95.long$Size <- factor(f.HDI95.long$Size, levels = sizes)
+f.HDI90 <-
+  subset(
+    bind_rows(
+    posts.5N$f$HDI90[c(variables,"Surface","Large","Small")],
+    posts.8N$f$HDI90[c(variables,"Surface","Large","Small")],
+    posts.ALOHAS$f$HDI90[c(variables,"Surface","Large","Small")],
+    posts.ALOHAW$f$HDI90[c(variables,"Surface","Large","Small")],
+    posts.OSP$f$HDI90[c(variables,"Surface","Large","Small")],
+    posts.PAP$f$HDI90[c(variables,"Surface","Large","Small")]),
+  Size == "0.2-0.5 mm" | Size == "1-2 mm" | Size == "2-5 mm" | Size == ">5 mm")# & Location == i)
+f.HDI90.long <-
+  melt(f.HDI90,
+       id.vars = c(variables),
+       variable.name = "Source",
+       value.name = "f")
+f.HDI90.long$Size <- factor(f.HDI90.long$Size, levels = sizes)
+f.HDI75 <-
+  subset(
+    bind_rows(
+    posts.5N$f$HDI75[c(variables,"Surface","Large","Small")],
+    posts.8N$f$HDI75[c(variables,"Surface","Large","Small")],
+    posts.ALOHAS$f$HDI75[c(variables,"Surface","Large","Small")],
+    posts.ALOHAW$f$HDI75[c(variables,"Surface","Large","Small")],
+    posts.OSP$f$HDI75[c(variables,"Surface","Large","Small")],
+    posts.PAP$f$HDI75[c(variables,"Surface","Large","Small")]),
+  Size == "0.2-0.5 mm" | Size == "1-2 mm" | Size == "2-5 mm" | Size == ">5 mm")# & Location == i)
+f.HDI75.long <-
+  melt(f.HDI75,
+       id.vars = c(variables),
+       variable.name = "Source",
+       value.name = "f")
+f.HDI75.long$Size <- factor(f.HDI75.long$Size, levels = sizes)
+f.HDI50 <-
+  subset(
+    bind_rows(
+    posts.5N$f$HDI50[c(variables,"Surface","Large","Small")],
+    posts.8N$f$HDI50[c(variables,"Surface","Large","Small")],
+    posts.ALOHAS$f$HDI50[c(variables,"Surface","Large","Small")],
+    posts.ALOHAW$f$HDI50[c(variables,"Surface","Large","Small")],
+    posts.OSP$f$HDI50[c(variables,"Surface","Large","Small")],
+    posts.PAP$f$HDI50[c(variables,"Surface","Large","Small")]),
+  Size == "0.2-0.5 mm" | Size == "1-2 mm" | Size == "2-5 mm" | Size == ">5 mm")# & Location == i)
+f.HDI50.long <-
+  melt(f.HDI50,
+       id.vars = c(variables),
+       variable.name = "Source",
+       value.name = "f")
+f.HDI50.long$Size <- factor(f.HDI50.long$Size, levels = sizes)
+
+# Appending columns with the min and max of the 95% HDI to the mode data frame.
+f.mode.long$min95 <- f.HDI95.long$f[seq(1,nrow(f.HDI95.long),2)]
+f.mode.long$max95 <- f.HDI95.long$f[seq(2,nrow(f.HDI95.long),2)]
+
+# # print(
+# ggplot()+
+#   # geom_path(
+#   #   data=f.mode.long,
+#   #   aes(x=f, y=Depth, color = Size, group = interaction(Size)),
+#   #   size = 1, alpha = 1,
+#   #   position = position_dodgev(height = 100))+
+#   geom_line(
+#     data = f.HDI95.long,
+#     aes(x = f, y = Depth, color = Size, group = interaction(Depth, Size)),
+#     alpha = 0.5, size = 1,
+#     position = position_dodgev(height = 100))+
+#   geom_line(
+#     data = f.HDI90.long,
+#     aes(x = f, y = Depth, color = Size, group = interaction(Depth, Size)),
+#     alpha = 0.7, size = 1.5,
+#     position = position_dodgev(height = 100))+
+#   geom_line(
+#     data = f.HDI75.long,
+#     aes(x = f, y = Depth, color = Size, group = interaction(Depth, Size)),
+#     alpha = 1, size = 2,
+#     position = position_dodgev(height = 100))+
+#   geom_line(
+#     data = f.HDI50.long,
+#     aes(x = f, y = Depth, color = Size, group = interaction(Depth, Size)),
+#     alpha = 1, size = 3,
+#     position = position_dodgev(height = 100))+
+#   geom_point(
+#     data=f.mode.long,
+#     aes(x=f, y=Depth, fill = Size, group = interaction(Depth, Size)),
+#     size = 2.5, shape = 22,
+#     position = position_dodgev(height = 100))+
+#   labs()+
+#   facet_grid(cols = vars(Source),
+#              rows = vars(factor(Location, levels = c("PAP","OSP","ALOHA S","ALOHA W","8 N","5 N"))),
+#              scales = "free_y")+
+#   # facet_wrap(~ Source, nrow = 1)+
+#   scale_y_reverse(breaks = c(0,250,500,750,1000,1250,1500), minor_breaks = c())+
+#   coord_cartesian(ylim=c(NA,0))+
+#   theme_light()#+
+#   # ggtitle(i)
+# # )
+# # }
+
+
+f_depth_plots <- function(
+    posts
+){
+  f.mode <- 
+  subset(
+    posts$f$mode[c(variables,"Surface","Large","Small")],
+  Size == "0.2-0.5 mm" | Size == "1-2 mm" | Size == "2-5 mm" | Size == ">5 mm")# & Location == i)
+f.mode.long <-
+  melt(f.mode,
+       id.vars = c(variables),
+       variable.name = "Source",
+       value.name = "f")
+f.mode.long$Size <- factor(f.mode.long$Size, levels = sizes)
+f.HDI95 <- 
+  subset(
+    posts$f$HDI95[c(variables,"Surface","Large","Small")],
+  Size == "0.2-0.5 mm" | Size == "1-2 mm" | Size == "2-5 mm" | Size == ">5 mm")# & Location == i)
+f.HDI95.long <-
+  melt(f.HDI95,
+       id.vars = c(variables),
+       variable.name = "Source",
+       value.name = "f")
+f.HDI95.long$Size <- factor(f.HDI95.long$Size, levels = sizes)
+f.HDI90 <- 
+  subset(
+    posts$f$HDI90[c(variables,"Surface","Large","Small")],
+  Size == "0.2-0.5 mm" | Size == "1-2 mm" | Size == "2-5 mm" | Size == ">5 mm")# & Location == i)
+f.HDI90.long <-
+  melt(f.HDI90,
+       id.vars = c(variables),
+       variable.name = "Source",
+       value.name = "f")
+f.HDI90.long$Size <- factor(f.HDI90.long$Size, levels = sizes)
+f.HDI75 <- 
+  subset(
+    posts$f$HDI75[c(variables,"Surface","Large","Small")],
+  Size == "0.2-0.5 mm" | Size == "1-2 mm" | Size == "2-5 mm" | Size == ">5 mm")# & Location == i)
+f.HDI75.long <-
+  melt(f.HDI75,
+       id.vars = c(variables),
+       variable.name = "Source",
+       value.name = "f")
+f.HDI75.long$Size <- factor(f.HDI75.long$Size, levels = sizes)
+f.HDI50 <- 
+  subset(
+    posts$f$HDI50[c(variables,"Surface","Large","Small")],
+  Size == "0.2-0.5 mm" | Size == "1-2 mm" | Size == "2-5 mm" | Size == ">5 mm")# & Location == i)
+f.HDI50.long <-
+  melt(f.HDI50,
+       id.vars = c(variables),
+       variable.name = "Source",
+       value.name = "f")
+f.HDI50.long$Size <- factor(f.HDI50.long$Size, levels = sizes)
+
+# Appending columns with the min and max of the 95% HDI to the mode data frame.
+f.mode.long$min95 <- f.HDI95.long$f[seq(1,nrow(f.HDI95.long),2)]
+f.mode.long$max95 <- f.HDI95.long$f[seq(2,nrow(f.HDI95.long),2)]
+
+sizes <- c("0.2-0.5 mm", "1-2 mm", "2-5 mm", ">5 mm")
+
+# print(
+ggplot()+
+  # geom_path(
+  #   data=f.mode.long,
+  #   aes(x=f, y=Depth, color = Size, group = interaction(Size)),
+  #   size = 1, alpha = 1,
+  #   position = position_dodgev(height = 100))+
+  geom_line(
+    data = f.HDI95.long,
+    aes(x = f, y = Depth, color = Size, group = interaction(Depth, Size)),
+    alpha = 0.5, size = 1,
+    position = position_dodgev(height = 100))+
+  geom_line(
+    data = f.HDI90.long,
+    aes(x = f, y = Depth, color = Size, group = interaction(Depth, Size)),
+    alpha = 0.7, size = 1.5,
+    position = position_dodgev(height = 100))+
+  geom_line(
+    data = f.HDI75.long,
+    aes(x = f, y = Depth, color = Size, group = interaction(Depth, Size)),
+    alpha = 1, size = 2,
+    position = position_dodgev(height = 100))+
+  geom_line(
+    data = f.HDI50.long,
+    aes(x = f, y = Depth, color = Size, group = interaction(Depth, Size)),
+    alpha = 1, size = 3,
+    position = position_dodgev(height = 100))+
+  geom_point(
+    data=f.mode.long,
+    aes(x=f, y=Depth, fill = Size, group = interaction(Depth, Size)),
+    size = 2.5, shape = 22,
+    position = position_dodgev(height = 100))+
+  labs()+
+  facet_wrap(~ Source)+
+  # facet_wrap(~ Source, nrow = 1)+
+  scale_y_reverse(breaks = c(0,250,500,750,1000,1250,1500), minor_breaks = c())+
+  scale_x_continuous(breaks = c(0,0.5,1), labels = c("0","0.5","1"))+
+  coord_cartesian(ylim=c(NA,-50), expand = FALSE)+
+  scale_color_manual(breaks = sizes,
+                     values = hue_pal()(length(sizes)))+
+  scale_fill_manual(breaks = sizes,
+                     values = hue_pal()(length(sizes)))+
+  theme_light()+theme(strip.text.x = element_text(size = 8),
+                        axis.title.x = element_blank(),
+                        axis.title.y = element_blank(),
+                        plot.title = element_text(size=12, hjust=0.5))
+}
+
+plot.PAP <-
+  f_depth_plots(posts.PAP) + ggtitle("North Atlantic")+
+  coord_cartesian(ylim=c(1000,-50), expand = FALSE)
+plot.OSP <-
+  f_depth_plots(posts.OSP) + ggtitle("Station Papa")+
+  coord_cartesian(ylim=c(1000,-50), expand = FALSE)
+plot.ALOHAS <-
+  f_depth_plots(posts.ALOHAS) + ggtitle("ALOHA Summer")
+plot.ALOHAW <-
+  f_depth_plots(posts.ALOHAW) + ggtitle("ALOHA Winter")
+plot.8N <-
+  f_depth_plots(posts.8N) + ggtitle("8° N")
+plot.5N <-
+  f_depth_plots(posts.5N) + ggtitle("5° N")
+
+plot.blank <-
+  ggplot+geom_blank()+theme_bw()+theme(panel.border=element_blank())
+
+ggarrange(
+  ggplot() + geom_blank() + ylab("Depth (m)"),
+
+ggarrange(plot.OSP,    plot.PAP,
+          plot.ALOHAS, plot.ALOHAW,
+          plot.5N,     plot.8N,
+          ncol = 2, nrow=3,
+          common.legend = TRUE, legend="top"),
+  
+  ggplot() + geom_blank() + theme_void(),
+  ggplot() + geom_blank() + xlab("Mixing Coefficients"),
+  widths = c(0.03,1),
+  heights = c(1,0.05)
+)
+
+
+```
+
+```{r f_depth_profiles_taxa, DPI = 300, fig.width=8.5, fig.height=6, cache=FALSE}
+# for (i in c("5 N","8 N","ALOHA S","ALOHA W","OSP")) {
+# Making master data frames including all locations
+# Also putting those into long format for plotting
+sizes <- c("0.06-0.2 mm", "0.2-0.5 mm", "1-2 mm", "2-5 mm", ">5 mm",
+           "Oithonid", "Harpactacoid", "Pleuromamma", "Peuromamma", "Ostracod", "Oncaeid", "Gaussia", "Chaetognath","Radiolarian", "Metridia", "Neocalanus","Gaetanus")
+f.mode <-
+  subset(
+  bind_rows(
+    posts.5N$f$mode[c(variables,"Surface","Large","Small")],
+    posts.8N$f$mode[c(variables,"Surface","Large","Small")],
+    posts.ALOHAS$f$mode[c(variables,"Surface","Large","Small")],
+    posts.ALOHAW$f$mode[c(variables,"Surface","Large","Small")],
+    posts.OSP$f$mode[c(variables,"Surface","Large","Small")],
+    posts.PAP$f$mode[c(variables,"Surface","Large","Small")]),
+  Size != "0.06-0.2 mm" & Size != "0.2-0.5 mm" & Size != "1-2 mm" & Size != "2-5 mm" & Size != ">5 mm")# & Location == i)
+f.mode.long <-
+  melt(f.mode,
+       id.vars = c(variables),
+       variable.name = "Source",
+       value.name = "f")
+f.mode.long$Size <- factor(f.mode.long$Size, levels = sizes)
+f.HDI95 <-
+  subset(
+    bind_rows(
+    posts.5N$f$HDI95[c(variables,"Surface","Large","Small")],
+    posts.8N$f$HDI95[c(variables,"Surface","Large","Small")],
+    posts.ALOHAS$f$HDI95[c(variables,"Surface","Large","Small")],
+    posts.ALOHAW$f$HDI95[c(variables,"Surface","Large","Small")],
+    posts.OSP$f$HDI95[c(variables,"Surface","Large","Small")],
+    posts.PAP$f$HDI95[c(variables,"Surface","Large","Small")]),
+  Size != "0.06-0.2 mm" & Size != "0.2-0.5 mm" & Size != "1-2 mm" & Size != "2-5 mm" & Size != ">5 mm")# & Location == i)
+f.HDI95.long <-
+  melt(f.HDI95,
+       id.vars = c(variables),
+       variable.name = "Source",
+       value.name = "f")
+f.HDI95.long$Size <- factor(f.HDI95.long$Size, levels = sizes)
+f.HDI90 <-
+  subset(
+    bind_rows(
+    posts.5N$f$HDI90[c(variables,"Surface","Large","Small")],
+    posts.8N$f$HDI90[c(variables,"Surface","Large","Small")],
+    posts.ALOHAS$f$HDI90[c(variables,"Surface","Large","Small")],
+    posts.ALOHAW$f$HDI90[c(variables,"Surface","Large","Small")],
+    posts.OSP$f$HDI90[c(variables,"Surface","Large","Small")],
+    posts.PAP$f$HDI90[c(variables,"Surface","Large","Small")]),
+  Size != "0.06-0.2 mm" & Size != "0.2-0.5 mm" & Size != "1-2 mm" & Size != "2-5 mm" & Size != ">5 mm")# & Location == i)
+f.HDI90.long <-
+  melt(f.HDI90,
+       id.vars = c(variables),
+       variable.name = "Source",
+       value.name = "f")
+f.HDI90.long$Size <- factor(f.HDI90.long$Size, levels = sizes)
+f.HDI75 <-
+  subset(
+    bind_rows(
+    posts.5N$f$HDI75[c(variables,"Surface","Large","Small")],
+    posts.8N$f$HDI75[c(variables,"Surface","Large","Small")],
+    posts.ALOHAS$f$HDI75[c(variables,"Surface","Large","Small")],
+    posts.ALOHAW$f$HDI75[c(variables,"Surface","Large","Small")],
+    posts.OSP$f$HDI75[c(variables,"Surface","Large","Small")],
+    posts.PAP$f$HDI75[c(variables,"Surface","Large","Small")]),
+  Size != "0.06-0.2 mm" & Size != "0.2-0.5 mm" & Size != "1-2 mm" & Size != "2-5 mm" & Size != ">5 mm")# & Location == i)
+f.HDI75.long <-
+  melt(f.HDI75,
+       id.vars = c(variables),
+       variable.name = "Source",
+       value.name = "f")
+f.HDI75.long$Size <- factor(f.HDI75.long$Size, levels = sizes)
+f.HDI50 <-
+  subset(
+    bind_rows(
+    posts.5N$f$HDI50[c(variables,"Surface","Large","Small")],
+    posts.8N$f$HDI50[c(variables,"Surface","Large","Small")],
+    posts.ALOHAS$f$HDI50[c(variables,"Surface","Large","Small")],
+    posts.ALOHAW$f$HDI50[c(variables,"Surface","Large","Small")],
+    posts.OSP$f$HDI50[c(variables,"Surface","Large","Small")],
+    posts.PAP$f$HDI50[c(variables,"Surface","Large","Small")]),
+  Size != "0.06-0.2 mm" & Size != "0.2-0.5 mm" & Size != "1-2 mm" & Size != "2-5 mm" & Size != ">5 mm")# & Location == i)
+f.HDI50.long <-
+  melt(f.HDI50,
+       id.vars = c(variables),
+       variable.name = "Source",
+       value.name = "f")
+f.HDI50.long$Size <- factor(f.HDI50.long$Size, levels = sizes)
+
+# Appending columns with the min and max of the 95% HDI to the mode data frame.
+f.mode.long$min95 <- f.HDI95.long$f[seq(1,nrow(f.HDI95.long),2)]
+f.mode.long$max95 <- f.HDI95.long$f[seq(2,nrow(f.HDI95.long),2)]
+
+sizes <- c("Oithonid", "Harpactacoid", "Pleuromamma", "Peuromamma", "Ostracod", "Oncaeid", "Gaussia", "Chaetognath","Radiolarian", "Metridia", "Neocalanus","Gaetanus")
+
+f_depth_plots <- function(
+    posts
+){
+  f.mode <-
+  subset(
+    posts$f$mode[c(variables,"Surface","Large","Small")],
+  Size != "0.2-0.5 mm" & Size != "1-2 mm" & Size != "2-5 mm" & Size != ">5 mm")# & Location != i)
+f.mode.long <-
+  melt(f.mode,
+       id.vars = c(variables),
+       variable.name = "Source",
+       value.name = "f")
+f.mode.long$Size <- factor(f.mode.long$Size, levels = sizes)
+f.HDI95 <-
+  subset(
+    posts$f$HDI95[c(variables,"Surface","Large","Small")],
+  Size != "0.2-0.5 mm" & Size != "1-2 mm" & Size != "2-5 mm" & Size != ">5 mm")# & Location != i)
+f.HDI95.long <-
+  melt(f.HDI95,
+       id.vars = c(variables),
+       variable.name = "Source",
+       value.name = "f")
+f.HDI95.long$Size <- factor(f.HDI95.long$Size, levels = sizes)
+f.HDI90 <-
+  subset(
+    posts$f$HDI90[c(variables,"Surface","Large","Small")],
+  Size != "0.2-0.5 mm" & Size != "1-2 mm" & Size != "2-5 mm" & Size != ">5 mm")# & Location != i)
+f.HDI90.long <-
+  melt(f.HDI90,
+       id.vars = c(variables),
+       variable.name = "Source",
+       value.name = "f")
+f.HDI90.long$Size <- factor(f.HDI90.long$Size, levels = sizes)
+f.HDI75 <-
+  subset(
+    posts$f$HDI75[c(variables,"Surface","Large","Small")],
+  Size != "0.2-0.5 mm" & Size != "1-2 mm" & Size != "2-5 mm" & Size != ">5 mm")# & Location != i)
+f.HDI75.long <-
+  melt(f.HDI75,
+       id.vars = c(variables),
+       variable.name = "Source",
+       value.name = "f")
+f.HDI75.long$Size <- factor(f.HDI75.long$Size, levels = sizes)
+f.HDI50 <-
+  subset(
+    posts$f$HDI50[c(variables,"Surface","Large","Small")],
+  Size != "0.2-0.5 mm" & Size != "1-2 mm" & Size != "2-5 mm" & Size != ">5 mm")# & Location != i)
+f.HDI50.long <-
+  melt(f.HDI50,
+       id.vars = c(variables),
+       variable.name = "Source",
+       value.name = "f")
+f.HDI50.long$Size <- factor(f.HDI50.long$Size, levels = sizes)
+
+# Appending columns with the min and max of the 95% HDI to the mode data frame.
+f.mode.long$min95 <- f.HDI95.long$f[seq(1,nrow(f.HDI95.long),2)]
+f.mode.long$max95 <- f.HDI95.long$f[seq(2,nrow(f.HDI95.long),2)]
+
+# print(
+ggplot(mapping = 
+         aes(x = f, y = Depth, color = Size, fill = Size, shape = Size, 
+           group = interaction(Depth, Size)))+
+  # geom_path(
+  #   data=f.mode.long,
+  #   aes(x=f, y=Depth, color = Size, group = interaction(Size)),
+  #   size = 1, alpha = 1,
+  #   position = position_dodgev(height = 100))+
+  geom_line(
+    data = f.HDI95.long,
+    alpha = 0.5, size = 1,
+    position = position_dodgev(height = 100))+
+  geom_line(
+    data = f.HDI90.long,
+    alpha = 0.7, size = 1.5,
+    position = position_dodgev(height = 100))+
+  geom_line(
+    data = f.HDI75.long,
+    alpha = 1, size = 2,
+    position = position_dodgev(height = 100))+
+  geom_line(
+    data = f.HDI50.long,
+    alpha = 1, size = 3,
+    position = position_dodgev(height = 100))+
+  geom_point(
+    data=f.mode.long,
+    size = 2.5, color = "black",
+    position = position_dodgev(height = 100))+
+  scale_shape_manual(values = c(21,22,23,24,21,22,23,24,21,22,23,24))+
+  facet_wrap(~ Source)+
+  # facet_wrap(~ Source, nrow = 1)+
+  scale_y_reverse(breaks = c(0,250,500,750,1000,1250,1500), minor_breaks = c())+
+  scale_x_continuous(breaks = c(0,0.5,1), labels = c("0","0.5","1"))+
+  coord_cartesian(ylim=c(NA,0))+
+  scale_color_manual(breaks = sizes,
+                     values = hue_pal()(length(sizes)))+
+  scale_fill_manual(breaks = sizes,
+                     values = hue_pal()(length(sizes)))+
+  labs(color="Taxa",fill="Taxa",shape="Taxa")+
+  theme_light()+theme(strip.text.x = element_text(size = 8),
+                        axis.title.x = element_blank(),
+                        axis.title.y = element_blank(),
+                        plot.title = element_text(size=12, hjust=0.5))
+}
+
+plot.PAP <-
+  f_depth_plots(posts.PAP) + ggtitle("North Atlantic")
+plot.OSP <-
+  f_depth_plots(posts.OSP) + ggtitle("Station Papa")
+plot.ALOHAS <-
+  f_depth_plots(posts.ALOHAS) + ggtitle("ALOHA Summer")
+plot.ALOHAW <-
+  f_depth_plots(posts.ALOHAW) + ggtitle("ALOHA Winter")
+# plot.8N <-
+#   f_depth_plots(posts.8N) + ggtitle("8 N")
+# plot.5N <-
+#   f_depth_plots(posts.5N) + ggtitle("5 N")
+
+plot.blank <-
+  ggplot+geom_blank()+theme_bw()+theme(panel.border=element_blank())
+
+ggarrange(
+  ggplot() + geom_blank() + ylab("Depth (m)"),
+
+ggarrange(plot.OSP,    plot.PAP,
+          plot.ALOHAS, plot.ALOHAW,
+          #plot.5N,     plot.8N,
+          ncol = 2, nrow = 2,
+          common.legend = FALSE, legend="right"),
+
+  ggplot() + geom_blank() + theme_void(),
+  ggplot() + geom_blank() + xlab("Mixing Coefficients"),
+  widths = c(0.04,1),
+  heights = c(1,0.05)
+)
+
+# ggplot()+
+#   # geom_path(
+#   #   data=f.mode.long,
+#   #   aes(x=f, y=Depth, color = Size, group = interaction(Size)),
+#   #   size = 1, alpha = 1,
+#   #   position = position_dodgev(height = 100))+
+#   geom_line(
+#     data = f.HDI95,
+#     aes(x = Surface, y = Depth, color = Location, group = interaction(Depth, Size)),
+#     alpha = 0.5, size = 1,
+#     position = position_dodgev(height = 100))+
+#   geom_line(
+#     data = f.HDI90,
+#     aes(x = Surface, y = Depth, color = Location, group = interaction(Depth, Size)),
+#     alpha = 0.7, size = 1.5,
+#     position = position_dodgev(height = 100))+
+#   geom_line(
+#     data = f.HDI75,
+#     aes(x = Surface, y = Depth, color = Location, group = interaction(Depth, Size)),
+#     alpha = 1, size = 2,
+#     position = position_dodgev(height = 100))+
+#   geom_line(
+#     data = f.HDI50,
+#     aes(x = Surface, y = Depth, color = Location, group = interaction(Depth, Size)),
+#     alpha = 1, size = 3,
+#     position = position_dodgev(height = 100))+
+#   geom_point(
+#     data=f.mode,
+#     aes(x=Surface, y=Depth, fill = Location, group = interaction(Depth, Size)),
+#     size = 2.5, shape = 22,
+#     position = position_dodgev(height = 100))+
+#   labs()+
+#   facet_wrap(~ Size, nrow=2)+
+#   # facet_wrap(~ Source, nrow = 1)+
+#   scale_y_reverse(breaks = c(0,250,500,750,1000,1250,1500), minor_breaks = c())+
+#   scale_x_continuous(breaks = c(0,0.5,1), labels = c("0","0.5","1"))+
+#   coord_cartesian(ylim=c(NA,0))+
+#   theme_light()
+
+noquote("Some summary stats:")
+
+noquote("OSP Carnivores")
+min(subset(posts.OSP$f$mode , Size == "Chaetognath" | Size == "Radiolarian")$Surface)
+mean(subset(posts.OSP$f$mode , Size == "Chaetognath" | Size == "Radiolarian")$Surface)
+max(subset(posts.OSP$f$mode , Size == "Chaetognath" | Size == "Radiolarian")$Surface)
+
+noquote("OSP Metridia")
+subset(posts.OSP$f$mode , Size == "Metridia")$Surface
+
+noquote("PAP Carnivores, Migrators, Detritivores")
+min(subset(posts.PAP$f$mode , Size == "Chaetognath" | Size == "Metridia" | Size == "Pleuromamma" | Size == "Oncaeid")$Surface)
+mean(subset(posts.PAP$f$mode , Size == "Chaetognath" | Size == "Metridia" | Size == "Pleuromamma" | Size == "Oncaeid")$Surface)
+max(subset(posts.PAP$f$mode , Size == "Chaetognath" | Size == "Metridia" | Size == "Pleuromamma" | Size == "Oncaeid")$Surface)
+
+noquote("PAP Oncaeia")
+min(subset(posts.PAP$f$mode , Size == "Oncaeid")$Surface)
+mean(subset(posts.PAP$f$mode , Size == "Oncaeid")$Surface)
+max(subset(posts.PAP$f$mode , Size == "Oncaeid")$Surface)
+
+noquote("Gaetanus at 225 m")
+subset(posts.PAP$f$mode , Size == "Gaetanus" & Depth == 225)$Surface
+
+noquote("Gaetanus at 625 m")
+subset(posts.PAP$f$mode , Size == "Gaetanus" & Depth == 625)$Surface
+
+noquote("ALOHA Chaetognaths, Harpactacoids, and Pleuromamma")
+min(subset(rbind(posts.ALOHAS$f$mode,posts.ALOHAW$f$mode) , (Size == "Chaetognath" & Depth<1000) | Size == "Harpactacoid" | Size == "Pleuromamma")$Surface)
+mean(subset(rbind(posts.ALOHAS$f$mode,posts.ALOHAW$f$mode) , (Size == "Chaetognath" & Depth<1000) | Size == "Harpactacoid" | Size == "Pleuromamma")$Surface)
+max(subset(rbind(posts.ALOHAS$f$mode,posts.ALOHAW$f$mode) , (Size == "Chaetognath" & Depth<1000) | Size == "Harpactacoid" | Size == "Pleuromamma")$Surface)
+
+```
+
+Next we're going to make depth profiles, comparing the mixing model results at all five locations.
+
+```{r f_depth_profiles_1-2, DPI = 300, fig.width=8.5, fig.asp=0.4, warning =FALSE, cache=FALSE, eval=FALSE}
+# # Because submicron particles were not collected at 5N and 8N, we will make a
+# # column call "Small" which we can compare to mixing model resuls from
+# # other location where small and submicron particles are pooled.
+# posts.5N$f$mode$Small <- posts.5N$f$mode$Small
+# posts.8N$f$mode$Small <- posts.8N$f$mode$Small
+# posts.5N$f$HDI95$Small <- posts.5N$f$HDI95$Small
+# posts.8N$f$HDI95$Small <- posts.8N$f$HDI95$Small
+# posts.5N$f$HDI90$Small <- posts.5N$f$HDI90$Small
+# posts.8N$f$HDI90$Small <- posts.8N$f$HDI90$Small
+# posts.5N$f$HDI75$Small <- posts.5N$f$HDI75$Small
+# posts.8N$f$HDI75$Small <- posts.8N$f$HDI75$Small
+# posts.5N$f$HDI50$Small <- posts.5N$f$HDI50$Small
+# posts.8N$f$HDI50$Small <- posts.8N$f$HDI50$Small
+
+# Making master data frames including all locations
+# Also putting those into long format for plotting
+f.mode <- 
+  subset(
+    bind_rows(
+    posts.5N$f$mode[c(variables,"Surface","Large","Small")],
+    posts.8N$f$mode[c(variables,"Surface","Large","Small")],
+    posts.ALOHAS$f$mode[c(variables,"Surface","Large","Small")],
+    posts.ALOHAW$f$mode[c(variables,"Surface","Large","Small")],
+    posts.OSP$f$mode[c(variables,"Surface","Large","Small")],
+    posts.PAP$f$mode[c(variables,"Surface","Large","Small")]),
+    Size == "1-2 mm")
+f.mode.long <-
+  melt(f.mode,
+       id.vars = c(variables),
+       variable.name = "Source",
+       value.name = "f")
+f.HDI95 <- 
+  subset(
+    bind_rows(
+    posts.5N$f$HDI95[c(variables,"Surface","Large","Small")],
+    posts.8N$f$HDI95[c(variables,"Surface","Large","Small")],
+    posts.ALOHAS$f$HDI95[c(variables,"Surface","Large","Small")],
+    posts.ALOHAW$f$HDI95[c(variables,"Surface","Large","Small")],
+    posts.OSP$f$HDI95[c(variables,"Surface","Large","Small")],
+    posts.PAP$f$HDI95[c(variables,"Surface","Large","Small")]),
+    Size == "1-2 mm")
+f.HDI95.long <-
+  melt(f.HDI95,
+       id.vars = c(variables),
+       variable.name = "Source",
+       value.name = "f")
+f.HDI90 <- 
+  subset(
+    bind_rows(
+    posts.5N$f$HDI90[c(variables,"Surface","Large","Small")],
+    posts.8N$f$HDI90[c(variables,"Surface","Large","Small")],
+    posts.ALOHAS$f$HDI90[c(variables,"Surface","Large","Small")],
+    posts.ALOHAW$f$HDI90[c(variables,"Surface","Large","Small")],
+    posts.OSP$f$HDI90[c(variables,"Surface","Large","Small")],
+    posts.PAP$f$HDI90[c(variables,"Surface","Large","Small")]),
+    Size == "1-2 mm")
+f.HDI90.long <-
+  melt(f.HDI90,
+       id.vars = c(variables),
+       variable.name = "Source",
+       value.name = "f")
+f.HDI75 <- 
+  subset(
+    bind_rows(
+    posts.5N$f$HDI75[c(variables,"Surface","Large","Small")],
+    posts.8N$f$HDI75[c(variables,"Surface","Large","Small")],
+    posts.ALOHAS$f$HDI75[c(variables,"Surface","Large","Small")],
+    posts.ALOHAW$f$HDI75[c(variables,"Surface","Large","Small")],
+    posts.OSP$f$HDI75[c(variables,"Surface","Large","Small")],
+    posts.PAP$f$HDI75[c(variables,"Surface","Large","Small")]),
+    Size == "1-2 mm")
+f.HDI75.long <-
+  melt(f.HDI75,
+       id.vars = c(variables),
+       variable.name = "Source",
+       value.name = "f")
+f.HDI50 <- 
+  subset(
+    bind_rows(
+    posts.5N$f$HDI50[c(variables,"Surface","Large","Small")],
+    posts.8N$f$HDI50[c(variables,"Surface","Large","Small")],
+    posts.ALOHAS$f$HDI50[c(variables,"Surface","Large","Small")],
+    posts.ALOHAW$f$HDI50[c(variables,"Surface","Large","Small")],
+    posts.OSP$f$HDI50[c(variables,"Surface","Large","Small")],
+    posts.PAP$f$HDI50[c(variables,"Surface","Large","Small")]),
+    Size == "1-2 mm")
+f.HDI50.long <-
+  melt(f.HDI50,
+       id.vars = c(variables),
+       variable.name = "Source",
+       value.name = "f")
+
+# Appending columns with the min and max of the 95% HDI to the mode data frame.
+f.mode.long$min95 <- f.HDI95.long$f[seq(1,nrow(f.HDI95.long),2)]
+f.mode.long$max95 <- f.HDI95.long$f[seq(2,nrow(f.HDI95.long),2)]
+
+ggplot()+
+  geom_colh(data = f.mode.long,
+            aes(x=f, y=Depth, fill=Source),
+            width = 90, color = "black")+
+  # geom_errorbarh(data = f.mode.long,
+  #                aes(x=f, y=Depth, fill=Source,
+  #                    xmin = min95, xmax = max95),
+  #                height=0,
+  #                position = position_dodgev(height=90))+
+  labs(color= "Organic Matter Source")+
+  facet_wrap(~ Location, nrow=1)+
+  scale_y_reverse(breaks = c(0,200,500,1000,1500), minor_breaks = c())+
+  coord_cartesian(ylim=c(1500,0))+
+  theme_light()
+  
+ggplot()+
+  geom_path(
+    data=f.mode.long,
+    aes(x=f, y=Depth, color=Location),
+    size = 1, alpha = 1,
+    position = position_dodgev(height = 100))+
+  geom_line(
+    data = f.HDI95.long,
+    aes(x = f, y = Depth, group = interaction(Depth, Location), 
+        color = Location),
+    alpha = 0.2, size = 1,
+    position = position_dodgev(height = 100))+
+  geom_line(
+    data = f.HDI90.long,
+    aes(x = f, y = Depth, group = interaction(Depth, Location), 
+        color = Location),
+    alpha = 0.2, size = 1.5,
+    position = position_dodgev(height = 100))+
+  geom_line(
+    data = f.HDI75.long,
+    aes(x = f, y = Depth, group = interaction(Depth, Location), 
+        color = Location),
+    alpha = 0.3, size = 2,
+    position = position_dodgev(height = 100))+
+  geom_line(
+    data = f.HDI50.long,
+    aes(x = f, y = Depth, group = interaction(Depth, Location), 
+        color = Location),
+    alpha = 0.5, size = 3,
+    position = position_dodgev(height = 100))+
+  geom_point(
+    data=f.mode.long,
+    aes(x=f, y=Depth, fill=Location),
+    size = 2.5, shape = 22,
+    position = position_dodgev(height = 100))+
+  labs(color= "Location")+
+  facet_wrap(~ Source, nrow=1)+
+  scale_y_reverse(breaks = c(0,200,500,1000,1500), minor_breaks = c())+
+  coord_cartesian(ylim=c(1500,0))+
+  theme_light()
+
+```
+
+# Trophic Parameter Depth Profiles {-}
+
+First we'll try and make a full page figure of all model results from all locations.
+
+```{r trophic_depth_profiles, DPI = 300, fig.width=8.5, fig.asp=1, cache=FALSE}
+# for (i in c("5 N","8 N","ALOHA S","ALOHA W","OSP")) {
+# Making master data frames including all locations
+# Also putting those into long format for plotting
+sizes <- c("0.06-0.2 mm", "0.2-0.5 mm", "1-2 mm", "2-5 mm", ">5 mm",
+           "Oithonid", "Harpactacoid", "Pleuromamma", "Peuromamma", "Ostracod", "Oncaeid", "Gaussia", "Chaetognath","Radiolarian", "Metridia", "Neocalanus","Gaetanus")
+trophic.mode <- 
+  subset(
+  bind_rows(
+    posts.5N$trophic$mode[c(variables,"PTS","MTS","FWL")],
+    posts.8N$trophic$mode[c(variables,"PTS","MTS","FWL")],
+    posts.ALOHAS$trophic$mode[c(variables,"PTS","MTS","FWL")],
+    posts.ALOHAW$trophic$mode[c(variables,"PTS","MTS","FWL")],
+    posts.OSP$trophic$mode[c(variables,"PTS","MTS","FWL")],
+    posts.PAP$trophic$mode[c(variables,"PTS","MTS","FWL")]),
+  Size != "0.06-0.2 mm")# & Location == i)
+trophic.mode.long <-
+  melt(trophic.mode,
+       id.vars = c(variables),
+       variable.name = "Source",
+       value.name = "value")
+trophic.mode.long$Size <- factor(trophic.mode.long$Size, levels = sizes)
+trophic.HDI95 <- 
+  subset(
+    bind_rows(
+    posts.5N$trophic$HDI95[c(variables,"PTS","MTS","FWL")],
+    posts.8N$trophic$HDI95[c(variables,"PTS","MTS","FWL")],
+    posts.ALOHAS$trophic$HDI95[c(variables,"PTS","MTS","FWL")],
+    posts.ALOHAW$trophic$HDI95[c(variables,"PTS","MTS","FWL")],
+    posts.OSP$trophic$HDI95[c(variables,"PTS","MTS","FWL")],
+    posts.PAP$trophic$HDI95[c(variables,"PTS","MTS","FWL")]),
+  Size != "0.06-0.2 mm")# & Location == i)
+trophic.HDI95.long <-
+  melt(trophic.HDI95,
+       id.vars = c(variables),
+       variable.name = "Source",
+       value.name = "value")
+trophic.HDI95.long$Size <- factor(trophic.HDI95.long$Size, levels = sizes)
+trophic.HDI90 <- 
+  subset(
+    bind_rows(
+    posts.5N$trophic$HDI90[c(variables,"PTS","MTS","FWL")],
+    posts.8N$trophic$HDI90[c(variables,"PTS","MTS","FWL")],
+    posts.ALOHAS$trophic$HDI90[c(variables,"PTS","MTS","FWL")],
+    posts.ALOHAW$trophic$HDI90[c(variables,"PTS","MTS","FWL")],
+    posts.OSP$trophic$HDI90[c(variables,"PTS","MTS","FWL")],
+    posts.PAP$trophic$HDI90[c(variables,"PTS","MTS","FWL")]),
+  Size != "0.06-0.2 mm")# & Location == i)
+trophic.HDI90.long <-
+  melt(trophic.HDI90,
+       id.vars = c(variables),
+       variable.name = "Source",
+       value.name = "value")
+trophic.HDI90.long$Size <- factor(trophic.HDI90.long$Size, levels = sizes)
+trophic.HDI75 <- 
+  subset(
+    bind_rows(
+    posts.5N$trophic$HDI75[c(variables,"PTS","MTS","FWL")],
+    posts.8N$trophic$HDI75[c(variables,"PTS","MTS","FWL")],
+    posts.ALOHAS$trophic$HDI75[c(variables,"PTS","MTS","FWL")],
+    posts.ALOHAW$trophic$HDI75[c(variables,"PTS","MTS","FWL")],
+    posts.OSP$trophic$HDI75[c(variables,"PTS","MTS","FWL")],
+    posts.PAP$trophic$HDI75[c(variables,"PTS","MTS","FWL")]),
+  Size != "0.06-0.2 mm")# & Location == i)
+trophic.HDI75.long <-
+  melt(trophic.HDI75,
+       id.vars = c(variables),
+       variable.name = "Source",
+       value.name = "value")
+trophic.HDI75.long$Size <- factor(trophic.HDI75.long$Size, levels = sizes)
+trophic.HDI50 <- 
+  subset(
+    bind_rows(
+    posts.5N$trophic$HDI50[c(variables,"PTS","MTS","FWL")],
+    posts.8N$trophic$HDI50[c(variables,"PTS","MTS","FWL")],
+    posts.ALOHAS$trophic$HDI50[c(variables,"PTS","MTS","FWL")],
+    posts.ALOHAW$trophic$HDI50[c(variables,"PTS","MTS","FWL")],
+    posts.OSP$trophic$HDI50[c(variables,"PTS","MTS","FWL")],
+    posts.PAP$trophic$HDI50[c(variables,"PTS","MTS","FWL")]),
+  Size != "0.06-0.2 mm")# & Location == i)
+trophic.HDI50.long <-
+  melt(trophic.HDI50,
+       id.vars = c(variables),
+       variable.name = "Source",
+       value.name = "value")
+trophic.HDI50.long$Size <- factor(trophic.HDI50.long$Size, levels = sizes)
+
+# Appending columns with the min and max of the 95% HDI to the mode data frame.
+trophic.mode.long$min95 <- trophic.HDI95.long$trophic[seq(1,nrow(trophic.HDI95.long),2)]
+trophic.mode.long$max95 <- trophic.HDI95.long$trophic[seq(2,nrow(trophic.HDI95.long),2)]
+  
+# # print(
+# ggplot()+
+#   # geom_path(
+#   #   data=trophic.mode.long,
+#   #   aes(x=f, y=Depth, color = Size, group = interaction(Size)),
+#   #   size = 1, alpha = 1,
+#   #   position = position_dodgev(height = 100))+
+#   geom_line(
+#     data = trophic.HDI95.long,
+#     aes(x = value, y = Depth, color = Size, group = interaction(Depth, Size)),
+#     alpha = 0.5, size = 1,
+#     position = position_dodgev(height = 100))+
+#   geom_line(
+#     data = trophic.HDI90.long,
+#     aes(x = value, y = Depth, color = Size, group = interaction(Depth, Size)),
+#     alpha = 0.7, size = 1.5,
+#     position = position_dodgev(height = 100))+
+#   geom_line(
+#     data = trophic.HDI75.long,
+#     aes(x = value, y = Depth, color = Size, group = interaction(Depth, Size)),
+#     alpha = 1, size = 2,
+#     position = position_dodgev(height = 100))+
+#   geom_line(
+#     data = trophic.HDI50.long,
+#     aes(x = value, y = Depth, color = Size, group = interaction(Depth, Size)),
+#     alpha = 1, size = 3,
+#     position = position_dodgev(height = 100))+
+#   geom_point(
+#     data=trophic.mode.long,
+#     aes(x = value, y = Depth, fill = Size, group = interaction(Depth, Size)),
+#     size = 2.5, shape = 22,
+#     position = position_dodgev(height = 100))+
+#   labs()+
+#   facet_grid(cols = vars(Source), 
+#              rows = vars(factor(Location, levels = c("OSP","ALOHA S","ALOHA W","8 N","5 N"))),
+#              scales = "free")+
+#   scale_y_reverse(breaks = c(0,250,500,750,1000,1250,1500), minor_breaks = c())+
+#   scale_x_continuous(breaks = c(0,1,2,3,4,5), minor_breaks = c(0.5,1.5,2.6,3.5,4.5))+
+#   coord_cartesian(ylim=c(NA,0), xlim=c(0,NA))+
+#   xlab("Trophic Parameter")+
+#   theme_light()
+# # )
+# # }
+
+trophic_depth_plots <- function(
+    posts
+){
+  trophic.mode <- 
+  subset(
+    posts$trophic$mode[c(variables,"FWL","PTS","MTS")],
+  Size == "0.2-0.5 mm" | Size == "1-2 mm" | Size == "2-5 mm" | Size == ">5 mm")# & Location == i)
+trophic.mode.long <-
+  melt(trophic.mode,
+       id.vars = c(variables),
+       variable.name = "Source",
+       value.name = "value")
+trophic.mode.long$Size <- factor(trophic.mode.long$Size, levels = sizes)
+trophic.HDI95 <- 
+  subset(
+    posts$trophic$HDI95[c(variables,"FWL","PTS","MTS")],
+  Size == "0.2-0.5 mm" | Size == "1-2 mm" | Size == "2-5 mm" | Size == ">5 mm")# & Location == i)
+trophic.HDI95.long <-
+  melt(trophic.HDI95,
+       id.vars = c(variables),
+       variable.name = "Source",
+       value.name = "value")
+trophic.HDI95.long$Size <- factor(trophic.HDI95.long$Size, levels = sizes)
+trophic.HDI90 <- 
+  subset(
+    posts$trophic$HDI90[c(variables,"FWL","PTS","MTS")],
+  Size == "0.2-0.5 mm" | Size == "1-2 mm" | Size == "2-5 mm" | Size == ">5 mm")# & Location == i)
+trophic.HDI90.long <-
+  melt(trophic.HDI90,
+       id.vars = c(variables),
+       variable.name = "Source",
+       value.name = "value")
+trophic.HDI90.long$Size <- factor(trophic.HDI90.long$Size, levels = sizes)
+trophic.HDI75 <- 
+  subset(
+    posts$trophic$HDI75[c(variables,"FWL","PTS","MTS")],
+  Size == "0.2-0.5 mm" | Size == "1-2 mm" | Size == "2-5 mm" | Size == ">5 mm")# & Location == i)
+trophic.HDI75.long <-
+  melt(trophic.HDI75,
+       id.vars = c(variables),
+       variable.name = "Source",
+       value.name = "value")
+trophic.HDI75.long$Size <- factor(trophic.HDI75.long$Size, levels = sizes)
+trophic.HDI50 <- 
+  subset(
+    posts$trophic$HDI50[c(variables,"FWL","PTS","MTS")],
+  Size == "0.2-0.5 mm" | Size == "1-2 mm" | Size == "2-5 mm" | Size == ">5 mm")# & Location == i)
+trophic.HDI50.long <-
+  melt(trophic.HDI50,
+       id.vars = c(variables),
+       variable.name = "Source",
+       value.name = "value")
+trophic.HDI50.long$Size <- factor(trophic.HDI50.long$Size, levels = sizes)
+
+# Appending columns with the min and max of the 95% HDI to the mode data frame.
+trophic.mode.long$min95 <- trophic.HDI95.long$trophic[seq(1,nrow(trophic.HDI95.long),2)]
+trophic.mode.long$max95 <- trophic.HDI95.long$trophic[seq(2,nrow(trophic.HDI95.long),2)]
+
+sizes <- c("0.2-0.5 mm", "1-2 mm", "2-5 mm", ">5 mm")
+
+# print(
+ggplot()+
+  # geom_path(
+  #   data=trophic.mode.long,
+  #   aes(x=f, y=Depth, color = Size, group = interaction(Size)),
+  #   size = 1, alpha = 1,
+  #   position = position_dodgev(height = 100))+
+  geom_line(
+    data = trophic.HDI95.long,
+    aes(x = value, y = Depth, color = Size, group = interaction(Depth, Size)),
+    alpha = 0.5, size = 1,
+    position = position_dodgev(height = 100))+
+  geom_line(
+    data = trophic.HDI90.long,
+    aes(x = value, y = Depth, color = Size, group = interaction(Depth, Size)),
+    alpha = 0.7, size = 1.5,
+    position = position_dodgev(height = 100))+
+  geom_line(
+    data = trophic.HDI75.long,
+    aes(x = value, y = Depth, color = Size, group = interaction(Depth, Size)),
+    alpha = 1, size = 2,
+    position = position_dodgev(height = 100))+
+  geom_line(
+    data = trophic.HDI50.long,
+    aes(x = value, y = Depth, color = Size, group = interaction(Depth, Size)),
+    alpha = 1, size = 3,
+    position = position_dodgev(height = 100))+
+  geom_point(
+    data=trophic.mode.long,
+    aes(x = value, y=Depth, fill = Size, group = interaction(Depth, Size)),
+    size = 2.5, shape = 22,
+    position = position_dodgev(height = 100))+
+  labs()+
+  facet_wrap(~ Source)+
+  # facet_wrap(~ Source, nrow = 1)+
+  scale_y_reverse(breaks = c(0,250,500,750,1000,1250,1500), minor_breaks = c())+
+  scale_x_continuous(breaks = seq(-1,5,0.5), 
+                     labels = c("-1","","0","","1","","2","","3","","4","","5"))+
+  scale_color_manual(breaks = sizes,
+                     values = hue_pal()(length(sizes)))+
+  scale_fill_manual(breaks = sizes,
+                    values = hue_pal()(length(sizes)))+
+  coord_cartesian(ylim=c(NA,-50), xlim=c(0,NA), expand=FALSE)+
+  theme_light()+theme(strip.text.x = element_text(size = 8),
+                      axis.title.x = element_blank(),
+                      axis.title.y = element_blank(),
+                      plot.title = element_text(size=12, hjust=0.5))
+}
+
+# alternative plot plotting colors
+  # scale_color_manual(breaks = sizes,
+  #                    values = c("goldenrod1","darkorange2","maroon3","purple1"))+
+  # scale_fill_manual(breaks = sizes,
+  #                    values = c("goldenrod1","darkorange2","maroon3","purple1"))+
+
+plot.PAP <-
+  trophic_depth_plots(posts.PAP) + ggtitle("North Atlantic")+
+  coord_cartesian(ylim=c(1000,-50), expand = FALSE)
+plot.OSP <-
+  trophic_depth_plots(posts.OSP) + ggtitle("Station Papa")+
+  coord_cartesian(ylim=c(1000,-50), expand = FALSE)
+plot.ALOHAS <-
+  trophic_depth_plots(posts.ALOHAS) + ggtitle("ALOHA Summer")
+plot.ALOHAW <-
+  trophic_depth_plots(posts.ALOHAW) + ggtitle("ALOHA Winter")
+plot.8N <-
+  trophic_depth_plots(posts.8N) + ggtitle("8° N")
+plot.5N <-
+  trophic_depth_plots(posts.5N) + ggtitle("5° N")
+
+plot.blank <-
+  ggplot+geom_blank()+theme_bw()+theme(panel.border=element_blank())
+
+ggarrange(
+  ggplot() + geom_blank() + ylab("Depth (m)"),
+
+ggarrange(plot.OSP,    plot.PAP,
+          plot.ALOHAS, plot.ALOHAW,
+          plot.5N,     plot.8N,
+          ncol = 2, nrow=3,
+          common.legend = TRUE, legend="top"),
+  
+  ggplot() + geom_blank() + theme_void(),
+  ggplot() + geom_blank() + xlab("Trophic Parameters"),
+  widths = c(0.03,1),
+  heights = c(1,0.05)
+)
+```
+
+```{r trophic_depth_profiles_v2, DPI = 300, fig.width=5, fig.height=6, cache=FALSE}
+# for (i in c("5 N","8 N","ALOHA S","ALOHA W","OSP")) {
+# Making master data frames including all locations
+# Also putting those into long format for plotting
+sizes <- c("0.06-0.2 mm", "0.2-0.5 mm", "1-2 mm", "2-5 mm", ">5 mm",
+           "Oithonid", "Harpactacoid", "Pleuromamma", "Peuromamma", "Ostracod", "Oncaeid", "Gaussia", "Chaetognath","Radiolarian", "Metridia", "Neocalanus","Gaetanus")
+trophic.mode <- 
+  subset(
+  bind_rows(
+    posts.5N$trophic$mode[c(variables,"PTS","MTS","FWL")],
+    posts.8N$trophic$mode[c(variables,"PTS","MTS","FWL")],
+    posts.ALOHAS$trophic$mode[c(variables,"PTS","MTS","FWL")],
+    posts.ALOHAW$trophic$mode[c(variables,"PTS","MTS","FWL")],
+    posts.OSP$trophic$mode[c(variables,"PTS","MTS","FWL")],
+    posts.PAP$trophic$mode[c(variables,"PTS","MTS","FWL")]),
+  Size != "0.06-0.2 mm")# & Location == i)
+trophic.mode$Location <- factor(trophic.mode$Location)
+trophic.mode$Location[which(trophic.mode$Location == "Station P")] <- "Station Papa"
+levels(trophic.mode$Location) <- c("5° N","8° N","ALOHA S","ALOHA W","Station Papa","N Atlantic")
+# Let's calculate TP at the base of the food web
+base.mode <- 
+  subset(
+  bind_rows(
+    posts.5N$base$mode[c(variables,"d15NAla","d15NPhe")],
+    posts.8N$base$mode[c(variables,"d15NAla","d15NPhe")],
+    posts.ALOHAS$base$mode[c(variables,"d15NAla","d15NPhe")],
+    posts.ALOHAW$base$mode[c(variables,"d15NAla","d15NPhe")],
+    posts.OSP$base$mode[c(variables,"d15NAla","d15NPhe")],
+    posts.PAP$base$mode[c(variables,"d15NAla","d15NPhe")]),
+  Size != "0.06-0.2 mm")# & Location == i)
+trophic.mode$baseTP <- (base.mode$d15NAla - base.mode$d15NPhe - 3.2) / 6.3 + 1
+trophic.mode$Size <- factor(trophic.mode$Size, levels = sizes)
+trophic.mode.long <-
+  melt(trophic.mode,
+       id.vars = c(variables),
+       variable.name = "Source",
+       value.name = "value")
+trophic.mode.long$Size <- factor(trophic.mode.long$Size, levels = sizes)
+
+data.all$TP <- (data.all$d15NAla - data.all$d15NPhe - 3.2) / 6.3 + 1
+
+trophic.mode.mean <- aggregate(
+  x = cbind(FWL,baseTP) ~ Depth + Location,
+  data = subset(trophic.mode,
+                Size == "0.2-0.5 mm" | Size == "1-2 mm" | 
+                  Size == "2-5 mm" | Size == ">5 mm"),
+  FUN = "mean"
+)
+trophic.mode.range <- aggregate(
+  x = cbind(FWL,baseTP) ~ Depth + Location,
+  data = subset(trophic.mode,
+                Size == "0.2-0.5 mm" | Size == "1-2 mm" | 
+                  Size == "2-5 mm" | Size == ">5 mm"),
+  FUN = "range"
+)
+trophic.mode.range$FWLstr <- NA
+trophic.mode.range$baseTPstr <- NA
+for (i in 1:nrow(trophic.mode.range)) {
+  if (round(trophic.mode.range$FWL[i,1],1) == 
+      round(trophic.mode.range$FWL[i,2],1)) {
+    trophic.mode.range$FWLstr[i] <- round(trophic.mode.range[i,3],1)
+  } else {
+    trophic.mode.range$FWLstr[i] <-
+      paste(round(trophic.mode.range$FWL[i,1],1),"-", 
+      round(trophic.mode.range$FWL[i,2],1), sep=" ")
+  }
+  if (round(trophic.mode.range$baseTP[i,1],1) == 
+      round(trophic.mode.range$baseTP[i,2],1)) {
+    trophic.mode.range$baseTPstr[i] <- round(trophic.mode.range[i,4],1)
+  } else {
+    trophic.mode.range$baseTPstr[i] <-
+      paste(round(trophic.mode.range$baseTP[i,1],1),"-", 
+      round(trophic.mode.range$baseTP[i,2],1), sep=" ")
+  }
+}
+trophic.mode.range$FWL <- trophic.mode.mean$FWL
+trophic.mode.range$baseTP <- trophic.mode.mean$baseTP
+
+ggplot(
+  data = subset(trophic.mode,
+                Size == "0.2-0.5 mm" | Size == "1-2 mm" | Size == "2-5 mm" | Size == ">5 mm")
+) +
+  geom_colh(
+    aes(x = FWL+baseTP, y = Depth, group = Size, fill = "FWL"),
+    position = "dodgev", width = 90,
+  )+
+  geom_text(
+    data = trophic.mode.range,
+    aes(x = (FWL/2+baseTP), y = Depth, label = round(FWL,1), color = "FWL")
+  )+
+  geom_colh(
+    aes(x = baseTP, y = Depth, group = Size, fill = "Base TP"),
+    position = "dodgev", width = 90,
+  )+
+  geom_text(
+    data = trophic.mode.range,
+    aes(x = baseTP/2, y = Depth, label = round(baseTP,1), color = "Base TP")
+    )+
+  scale_fill_manual(values = c("steelblue","goldenrod"))+
+  scale_color_manual(values = c("lightblue1","darkorange4"))+
+  # geom_colh(
+  #   data = subset(data.all,
+  #               Size == "0.2-0.5 mm" | Size == "1-2 mm" | Size == "2-5 mm" | Size == ">5 mm"),
+  #   aes(x = TP, y = Depth+20, group = Size),
+  #   position = "dodgev", width = 40, fill = "goldenrod"
+  # )+
+  scale_y_reverse()+
+  facet_wrap(~Location, nrow=2, dir = "v")+
+  labs(fill="",color="") +
+  theme(legend.position = "bottom") +
+  xlab("Base TP + Food Web Length") + ylab("Depth (m)")
+
+```
+
+
+```{r trophic_depth_profiles_taxa, DPI = 300, fig.width=8.5, fig.height=6, cache=FALSE}
+# for (i in c("5 N","8 N","ALOHA S","ALOHA W","OSP")) {
+# Making master data frames including all locations
+# Also putting those into long format for plotting
+sizes <- c("0.06-0.2 mm", "0.2-0.5 mm", "1-2 mm", "2-5 mm", ">5 mm",
+           "Oithonid", "Harpactacoid", "Pleuromamma", "Peuromamma", "Ostracod", "Oncaeid", "Gaussia", "Chaetognath","Radiolarian", "Metridia", "Neocalanus","Gaetanus")
+trophic.mode <-
+  subset(
+  bind_rows(
+    posts.5N$trophic$mode[c(variables,"PTS","MTS","FWL")],
+    posts.8N$trophic$mode[c(variables,"PTS","MTS","FWL")],
+    posts.ALOHAS$trophic$mode[c(variables,"PTS","MTS","FWL")],
+    posts.ALOHAW$trophic$mode[c(variables,"PTS","MTS","FWL")],
+    posts.OSP$trophic$mode[c(variables,"PTS","MTS","FWL")],
+    posts.PAP$trophic$mode[c(variables,"PTS","MTS","FWL")]),
+  Size != "0.06-0.2 mm")# & Location == i)
+trophic.mode.long <-
+  melt(trophic.mode,
+       id.vars = c(variables),
+       variable.name = "Source",
+       value.name = "value")
+trophic.mode.long$Size <- factor(trophic.mode.long$Size, levels = sizes)
+trophic.HDI95 <-
+  subset(
+    bind_rows(
+    posts.5N$trophic$HDI95[c(variables,"PTS","MTS","FWL")],
+    posts.8N$trophic$HDI95[c(variables,"PTS","MTS","FWL")],
+    posts.ALOHAS$trophic$HDI95[c(variables,"PTS","MTS","FWL")],
+    posts.ALOHAW$trophic$HDI95[c(variables,"PTS","MTS","FWL")],
+    posts.OSP$trophic$HDI95[c(variables,"PTS","MTS","FWL")],
+    posts.PAP$trophic$HDI95[c(variables,"PTS","MTS","FWL")]),
+  Size != "0.06-0.2 mm")# & Location == i)
+trophic.HDI95.long <-
+  melt(trophic.HDI95,
+       id.vars = c(variables),
+       variable.name = "Source",
+       value.name = "value")
+trophic.HDI95.long$Size <- factor(trophic.HDI95.long$Size, levels = sizes)
+trophic.HDI90 <-
+  subset(
+    bind_rows(
+    posts.5N$trophic$HDI90[c(variables,"PTS","MTS","FWL")],
+    posts.8N$trophic$HDI90[c(variables,"PTS","MTS","FWL")],
+    posts.ALOHAS$trophic$HDI90[c(variables,"PTS","MTS","FWL")],
+    posts.ALOHAW$trophic$HDI90[c(variables,"PTS","MTS","FWL")],
+    posts.OSP$trophic$HDI90[c(variables,"PTS","MTS","FWL")],
+    posts.PAP$trophic$HDI90[c(variables,"PTS","MTS","FWL")]),
+  Size != "0.06-0.2 mm")# & Location == i)
+trophic.HDI90.long <-
+  melt(trophic.HDI90,
+       id.vars = c(variables),
+       variable.name = "Source",
+       value.name = "value")
+trophic.HDI90.long$Size <- factor(trophic.HDI90.long$Size, levels = sizes)
+trophic.HDI75 <-
+  subset(
+    bind_rows(
+    posts.5N$trophic$HDI75[c(variables,"PTS","MTS","FWL")],
+    posts.8N$trophic$HDI75[c(variables,"PTS","MTS","FWL")],
+    posts.ALOHAS$trophic$HDI75[c(variables,"PTS","MTS","FWL")],
+    posts.ALOHAW$trophic$HDI75[c(variables,"PTS","MTS","FWL")],
+    posts.OSP$trophic$HDI75[c(variables,"PTS","MTS","FWL")],
+    posts.PAP$trophic$HDI75[c(variables,"PTS","MTS","FWL")]),
+  Size != "0.06-0.2 mm")# & Location == i)
+trophic.HDI75.long <-
+  melt(trophic.HDI75,
+       id.vars = c(variables),
+       variable.name = "Source",
+       value.name = "value")
+trophic.HDI75.long$Size <- factor(trophic.HDI75.long$Size, levels = sizes)
+trophic.HDI50 <-
+  subset(
+    bind_rows(
+    posts.5N$trophic$HDI50[c(variables,"PTS","MTS","FWL")],
+    posts.8N$trophic$HDI50[c(variables,"PTS","MTS","FWL")],
+    posts.ALOHAS$trophic$HDI50[c(variables,"PTS","MTS","FWL")],
+    posts.ALOHAW$trophic$HDI50[c(variables,"PTS","MTS","FWL")],
+    posts.OSP$trophic$HDI50[c(variables,"PTS","MTS","FWL")],
+    posts.PAP$trophic$HDI50[c(variables,"PTS","MTS","FWL")]),
+  Size != "0.06-0.2 mm")# & Location == i)
+trophic.HDI50.long <-
+  melt(trophic.HDI50,
+       id.vars = c(variables),
+       variable.name = "Source",
+       value.name = "value")
+trophic.HDI50.long$Size <- factor(trophic.HDI50.long$Size, levels = sizes)
+
+# Appending columns with the min and max of the 95% HDI to the mode data frame.
+trophic.mode.long$min95 <- trophic.HDI95.long$trophic[seq(1,nrow(trophic.HDI95.long),2)]
+trophic.mode.long$max95 <- trophic.HDI95.long$trophic[seq(2,nrow(trophic.HDI95.long),2)]
+#   
+# # print(
+# ggplot()+
+#   # geom_path(
+#   #   data=trophic.mode.long,
+#   #   aes(x=f, y=Depth, color = Size, group = interaction(Size)),
+#   #   size = 1, alpha = 1,
+#   #   position = position_dodgev(height = 100))+
+#   geom_line(
+#     data = trophic.HDI95.long,
+#     aes(x = value, y = Depth, color = Size, group = interaction(Depth, Size)),
+#     alpha = 0.5, size = 1,
+#     position = position_dodgev(height = 100))+
+#   geom_line(
+#     data = trophic.HDI90.long,
+#     aes(x = value, y = Depth, color = Size, group = interaction(Depth, Size)),
+#     alpha = 0.7, size = 1.5,
+#     position = position_dodgev(height = 100))+
+#   geom_line(
+#     data = trophic.HDI75.long,
+#     aes(x = value, y = Depth, color = Size, group = interaction(Depth, Size)),
+#     alpha = 1, size = 2,
+#     position = position_dodgev(height = 100))+
+#   geom_line(
+#     data = trophic.HDI50.long,
+#     aes(x = value, y = Depth, color = Size, group = interaction(Depth, Size)),
+#     alpha = 1, size = 3,
+#     position = position_dodgev(height = 100))+
+#   geom_point(
+#     data=trophic.mode.long,
+#     aes(x = value, y = Depth, fill = Size, group = interaction(Depth, Size)),
+#     size = 2.5, shape = 22,
+#     position = position_dodgev(height = 100))+
+#   labs()+
+#   facet_grid(cols = vars(Source), 
+#              rows = vars(factor(Location, levels = c("OSP","ALOHA S","ALOHA W","8 N","5 N"))),
+#              scales = "free")+
+#   scale_y_reverse(breaks = c(0,250,500,750,1000,1250,1500), minor_breaks = c())+
+#   scale_x_continuous(breaks = c(0,1,2,3,4,5), minor_breaks = c(0.5,1.5,2.6,3.5,4.5))+
+#   coord_cartesian(ylim=c(NA,0), xlim=c(-0.25,NA))+
+#   xlab("Trophic Parameter")+
+#   theme_light()
+# # )
+# # }
+
+sizes <- c("Oithonid", "Harpactacoid", "Pleuromamma", "Peuromamma", "Ostracod", "Oncaeid", "Gaussia", "Chaetognath","Radiolarian", "Metridia", "Neocalanus","Gaetanus")
+
+trophic_depth_plots <- function(
+    posts
+){
+  trophic.mode <- 
+  subset(
+    posts$trophic$mode[c(variables,"FWL","PTS","MTS")],
+  Size != "0.2-0.5 mm" & Size != "1-2 mm" & Size != "2-5 mm" & Size != ">5 mm")# & Location == i)
+trophic.mode.long <-
+  melt(trophic.mode,
+       id.vars = c(variables),
+       variable.name = "Source",
+       value.name = "value")
+trophic.mode.long$Size <- factor(trophic.mode.long$Size, levels = sizes)
+trophic.HDI95 <- 
+  subset(
+    posts$trophic$HDI95[c(variables,"FWL","PTS","MTS")],
+  Size != "0.2-0.5 mm" & Size != "1-2 mm" & Size != "2-5 mm" & Size != ">5 mm")# & Location == i)
+trophic.HDI95.long <-
+  melt(trophic.HDI95,
+       id.vars = c(variables),
+       variable.name = "Source",
+       value.name = "value")
+trophic.HDI95.long$Size <- factor(trophic.HDI95.long$Size, levels = sizes)
+trophic.HDI90 <- 
+  subset(
+    posts$trophic$HDI90[c(variables,"FWL","PTS","MTS")],
+  Size != "0.2-0.5 mm" & Size != "1-2 mm" & Size != "2-5 mm" & Size != ">5 mm")# & Location == i)
+trophic.HDI90.long <-
+  melt(trophic.HDI90,
+       id.vars = c(variables),
+       variable.name = "Source",
+       value.name = "value")
+trophic.HDI90.long$Size <- factor(trophic.HDI90.long$Size, levels = sizes)
+trophic.HDI75 <- 
+  subset(
+    posts$trophic$HDI75[c(variables,"FWL","PTS","MTS")],
+  Size != "0.2-0.5 mm" & Size != "1-2 mm" & Size != "2-5 mm" & Size != ">5 mm")# & Location == i)
+trophic.HDI75.long <-
+  melt(trophic.HDI75,
+       id.vars = c(variables),
+       variable.name = "Source",
+       value.name = "value")
+trophic.HDI75.long$Size <- factor(trophic.HDI75.long$Size, levels = sizes)
+trophic.HDI50 <- 
+  subset(
+    posts$trophic$HDI50[c(variables,"FWL","PTS","MTS")],
+  Size != "0.2-0.5 mm" & Size != "1-2 mm" & Size != "2-5 mm" & Size != ">5 mm")# & Location == i)
+trophic.HDI50.long <-
+  melt(trophic.HDI50,
+       id.vars = c(variables),
+       variable.name = "Source",
+       value.name = "value")
+trophic.HDI50.long$Size <- factor(trophic.HDI50.long$Size, levels = sizes)
+
+# Appending columns with the min and max of the 95% HDI to the mode data frame.
+trophic.mode.long$min95 <- trophic.HDI95.long$trophic[seq(1,nrow(trophic.HDI95.long),2)]
+trophic.mode.long$max95 <- trophic.HDI95.long$trophic[seq(2,nrow(trophic.HDI95.long),2)]
+
+# print(
+ggplot(mapping = 
+         aes(x = value, y = Depth, color = Size, fill = Size, shape = Size, 
+           group = interaction(Depth, Size)))+
+  # geom_path(
+  #   data=trophic.mode.long,
+  #   aes(x=f, y=Depth, color = Size, group = interaction(Size)),
+  #   size = 1, alpha = 1,
+  #   position = position_dodgev(height = 100))+
+  geom_line(
+    data = trophic.HDI95.long,
+    alpha = 0.5, size = 1,
+    position = position_dodgev(height = 100))+
+  geom_line(
+    data = trophic.HDI90.long,
+    alpha = 0.7, size = 1.5,
+    position = position_dodgev(height = 100))+
+  geom_line(
+    data = trophic.HDI75.long,
+    alpha = 1, size = 2,
+    position = position_dodgev(height = 100))+
+  geom_line(
+    data = trophic.HDI50.long,
+    alpha = 1, size = 3,
+    position = position_dodgev(height = 100))+
+  geom_point(
+    data=trophic.mode.long,
+    size = 2.5, color = "black",
+    position = position_dodgev(height = 100))+
+  scale_shape_manual(values = c(21,22,23,24,21,22,23,24,21,22,23,24))+
+  labs(color="Taxa",fill="Taxa",shape="Taxa")+
+  facet_wrap(~ Source)+
+  # facet_wrap(~ Source, nrow = 1)+
+  scale_y_reverse(breaks = c(0,250,500,750,1000,1250,1500), 
+                  minor_breaks = c())+
+  scale_x_continuous(breaks = seq(-1,5,0.5), 
+                     minor_breaks = c(),
+                     labels = c("-1","","0","","1","","2","","3","","4","","5"))+
+  coord_cartesian(ylim=c(NA,0), xlim=c(0,3))+
+  scale_color_manual(breaks = sizes,
+                     values = hue_pal()(length(sizes)))+
+  scale_fill_manual(breaks = sizes,
+                    values = hue_pal()(length(sizes)))+
+  theme_light()+theme(strip.text.x = element_text(size = 8),
+                      axis.title.x = element_blank(),
+                      axis.title.y = element_blank(),
+                      plot.title = element_text(size=12, hjust=0.5))
+}
+
+plot.PAP <-
+  trophic_depth_plots(posts.PAP) + ggtitle("PAP Epoch 3")
+plot.OSP <-
+  trophic_depth_plots(posts.OSP) + ggtitle("Station Papa")
+plot.ALOHAS <-
+  trophic_depth_plots(posts.ALOHAS) + ggtitle("ALOHA Summer")
+plot.ALOHAW <-
+  trophic_depth_plots(posts.ALOHAW) + ggtitle("ALOHA Winter")
+# plot.8N <-
+#   trophic_depth_plots(posts.8N) + ggtitle("8 N")
+# plot.5N <-
+#   trophic_depth_plots(posts.5N) + ggtitle("5 N")
+
+plot.blank <-
+  ggplot+geom_blank()+theme_bw()+theme(panel.border=element_blank())
+
+ggarrange(
+  ggplot() + geom_blank() + ylab("Depth (m)"),
+
+ggarrange(plot.OSP,    plot.PAP,
+          plot.ALOHAS, plot.ALOHAW,
+          #plot.5N,     plot.8N,
+          ncol = 2, nrow=2,
+          common.legend = FALSE, legend="right"),
+
+  ggplot() + geom_blank() + theme_void(),
+  ggplot() + geom_blank() + xlab("Trophic Parameters"),
+  widths = c(0.04,1),
+  heights = c(1,0.05)
+)
+```
+Next we're going to make depth profiles, comparing the mixing model results at all five locations.
+
+```{r trophic_depth_profiles_1-2, DPI = 300, fig.width=8.5, fig.asp=0.4, warning=FALSE, eval=FALSE}
+# # Because submicron particles were not collected at 5N and 8N, we will make a
+# # column call "Small" which we can compare to mixing model resuls from
+# # other location where small and submicron particles are pooled.
+# posts.5N$trophic$mode$Small <- posts.5N$trophic$mode$Small
+# posts.8N$trophic$mode$Small <- posts.8N$trophic$mode$Small
+# posts.5N$trophic$HDI95$Small <- posts.5N$trophic$HDI95$Small
+# posts.8N$trophic$HDI95$Small <- posts.8N$trophic$HDI95$Small
+# posts.5N$trophic$HDI90$Small <- posts.5N$trophic$HDI90$Small
+# posts.8N$trophic$HDI90$Small <- posts.8N$trophic$HDI90$Small
+# posts.5N$trophic$HDI75$Small <- posts.5N$trophic$HDI75$Small
+# posts.8N$trophic$HDI75$Small <- posts.8N$trophic$HDI75$Small
+# posts.5N$trophic$HDI50$Small <- posts.5N$trophic$HDI50$Small
+# posts.8N$trophic$HDI50$Small <- posts.8N$trophic$HDI50$Small
+
+# Making master data frames including all locations
+# Also putting those into long format for plotting
+trophic.mode <- 
+  subset(
+    bind_rows(
+    posts.5N$trophic$mode[c(variables,"PTS","MTS","FWL")],
+    posts.8N$trophic$mode[c(variables,"PTS","MTS","FWL")],
+    posts.ALOHAS$trophic$mode[c(variables,"PTS","MTS","FWL")],
+    posts.ALOHAW$trophic$mode[c(variables,"PTS","MTS","FWL")],
+    posts.OSP$trophic$mode[c(variables,"PTS","MTS","FWL")],
+    posts.PAP$trophic$mode[c(variables,"PTS","MTS","FWL")]),
+    Size == "1-2 mm")
+trophic.mode.long <-
+  melt(trophic.mode,
+       id.vars = c(variables),
+       variable.name = "Source",
+       value.name = "value")
+trophic.HDI95 <- 
+  subset(
+    bind_rows(
+    posts.5N$trophic$HDI95[c(variables,"PTS","MTS","FWL")],
+    posts.8N$trophic$HDI95[c(variables,"PTS","MTS","FWL")],
+    posts.ALOHAS$trophic$HDI95[c(variables,"PTS","MTS","FWL")],
+    posts.ALOHAW$trophic$HDI95[c(variables,"PTS","MTS","FWL")],
+    posts.OSP$trophic$HDI95[c(variables,"PTS","MTS","FWL")],
+    posts.PAP$trophic$HDI95[c(variables,"PTS","MTS","FWL")]),
+    Size == "1-2 mm")
+trophic.HDI95.long <-
+  melt(trophic.HDI95,
+       id.vars = c(variables),
+       variable.name = "Source",
+       value.name = "value")
+trophic.HDI90 <- 
+  subset(
+    bind_rows(
+    posts.5N$trophic$HDI90[c(variables,"PTS","MTS","FWL")],
+    posts.8N$trophic$HDI90[c(variables,"PTS","MTS","FWL")],
+    posts.ALOHAS$trophic$HDI90[c(variables,"PTS","MTS","FWL")],
+    posts.ALOHAW$trophic$HDI90[c(variables,"PTS","MTS","FWL")],
+    posts.OSP$trophic$HDI90[c(variables,"PTS","MTS","FWL")],
+    posts.PAP$trophic$HDI90[c(variables,"PTS","MTS","FWL")]),
+    Size == "1-2 mm")
+trophic.HDI90.long <-
+  melt(trophic.HDI90,
+       id.vars = c(variables),
+       variable.name = "Source",
+       value.name = "value")
+trophic.HDI75 <- 
+  subset(
+    bind_rows(
+    posts.5N$trophic$HDI75[c(variables,"PTS","MTS","FWL")],
+    posts.8N$trophic$HDI75[c(variables,"PTS","MTS","FWL")],
+    posts.ALOHAS$trophic$HDI75[c(variables,"PTS","MTS","FWL")],
+    posts.ALOHAW$trophic$HDI75[c(variables,"PTS","MTS","FWL")],
+    posts.OSP$trophic$HDI75[c(variables,"PTS","MTS","FWL")],
+    posts.PAP$trophic$HDI75[c(variables,"PTS","MTS","FWL")]),
+    Size == "1-2 mm")
+trophic.HDI75.long <-
+  melt(trophic.HDI75,
+       id.vars = c(variables),
+       variable.name = "Source",
+       value.name = "value")
+trophic.HDI50 <- 
+  subset(
+    bind_rows(
+    posts.5N$trophic$HDI50[c(variables,"PTS","MTS","FWL")],
+    posts.8N$trophic$HDI50[c(variables,"PTS","MTS","FWL")],
+    posts.ALOHAS$trophic$HDI50[c(variables,"PTS","MTS","FWL")],
+    posts.ALOHAW$trophic$HDI50[c(variables,"PTS","MTS","FWL")],
+    posts.OSP$trophic$HDI50[c(variables,"PTS","MTS","FWL")],
+    posts.PAP$trophic$HDI50[c(variables,"PTS","MTS","FWL")]),
+    Size == "1-2 mm")
+trophic.HDI50.long <-
+  melt(trophic.HDI50,
+       id.vars = c(variables),
+       variable.name = "Source",
+       value.name = "value")
+
+# Appending columns with the min and max of the 95% HDI to the mode data frame.
+trophic.mode.long$min95 <- trophic.HDI95.long$value[seq(1,nrow(trophic.HDI95.long),2)]
+trophic.mode.long$max95 <- trophic.HDI95.long$value[seq(2,nrow(trophic.HDI95.long),2)]
+
+ggplot()+
+  geom_colh(data = trophic.mode.long,
+            aes(x=value, y=Depth, fill=Source),
+            position = "dodgev", width = 90, color = "black")+
+  geom_errorbarh(data = trophic.mode.long,
+                 aes(x=value, y=Depth, fill=Source,
+                     xmin = min95, xmax = max95),
+                 height=0,
+                 position = position_dodgev(height=90))+
+labs(color= "Organic Matter Source")+
+  facet_wrap(~ Location, nrow=1)+
+  scale_y_reverse(breaks = c(0,200,500,1000,1500), minor_breaks = c())+
+  coord_cartesian(ylim=c(1500,0))+
+  theme_light()
+  
+ggplot()+
+  geom_path(
+    data=trophic.mode.long,
+    aes(x = value, y=Depth, color=Location),
+    size = 1, alpha = 1,
+    position = position_dodgev(height = 100))+
+  geom_line(
+    data = trophic.HDI95.long,
+    aes(x = value, y = Depth, group = interaction(Depth, Location), 
+        color = Location),
+    alpha = 0.2, size = 1,
+    position = position_dodgev(height = 100))+
+  geom_line(
+    data = trophic.HDI90.long,
+    aes(x = value, y = Depth, group = interaction(Depth, Location), 
+        color = Location),
+    alpha = 0.2, size = 1.5,
+    position = position_dodgev(height = 100))+
+  geom_line(
+    data = trophic.HDI75.long,
+    aes(x = value, y = Depth, group = interaction(Depth, Location), 
+        color = Location),
+    alpha = 0.3, size = 2,
+    position = position_dodgev(height = 100))+
+  geom_line(
+    data = trophic.HDI50.long,
+    aes(x = value, y = Depth, group = interaction(Depth, Location), 
+        color = Location),
+    alpha = 0.5, size = 3,
+    position = position_dodgev(height = 100))+
+  geom_point(
+    data=trophic.mode.long,
+    aes(x = value, y=Depth, fill=Location),
+    size = 2.5, shape = 22,
+    position = position_dodgev(height = 100))+
+  labs(color= "Location")+
+  facet_wrap(~ Source, nrow=1)+
+  scale_y_reverse(breaks = c(0,200,500,1000,1500), minor_breaks = c())+
+  coord_cartesian(ylim=c(1500,0))+
+  theme_light()
+
+```
+
+```{r Linear_Models_1-2_trophic, dpi=300, fig.width=8, fig.asp=0.6}
+
+trophic.mode <- 
+  subset(
+  bind_rows(
+    posts.5N$trophic$mode[c(variables,"PTS","MTS","FWL")],
+    posts.8N$trophic$mode[c(variables,"PTS","MTS","FWL")],
+    posts.ALOHAS$trophic$mode[c(variables,"PTS","MTS","FWL")],
+    posts.ALOHAW$trophic$mode[c(variables,"PTS","MTS","FWL")],
+    posts.OSP$trophic$mode[c(variables,"PTS","MTS","FWL")],
+    posts.PAP$trophic$mode[c(variables,"PTS","MTS","FWL")]),
+  Size == "0.2-0.5 mm" | Size == "1-2 mm" | Size == "2-5 mm" | Size == ">5 mm")
+
+print("===== FWL =====")
+
+ggplot(
+  data = trophic.mode,
+  aes(x = Depth, y = FWL, color = Location, fill = Location))+
+  geom_smooth(
+    method = "lm", se = FALSE, lty = 2)+
+  geom_smooth(
+    method = "lm", se = TRUE, color = "black", fill = "grey50")+
+  geom_point(
+    size = 3, shape = 21, color = "black")+
+  ggtitle("FWL")
+
+LM <- lm(FWL ~ Location + Depth + Location:Depth,
+         data = trophic.mode
+)
+print("----- SUMMARY -----")
+summary(LM)
+print("----- ANOVA -----")
+anova(LM)
+plot(allEffects(LM))
+
+LM <- lm(FWL ~ Depth,
+         data = trophic.mode
+)
+print("----- SUMMARY -----")
+summary(LM)
+print("----- ANOVA -----")
+anova(LM)
+plot(allEffects(LM))
+
+print("===== MTS =====")
+ggplot(
+  data = trophic.mode,
+  aes(x = Depth, y = MTS, color = Location, fill = Location))+
+  geom_smooth(
+    method = "lm", se = FALSE, lty = 2)+
+  geom_smooth(
+    method = "lm", se = TRUE, color = "black", fill = "grey50")+
+  geom_point(
+    size = 3, shape = 21, color = "black")+
+  ggtitle("MTS")
+
+LM <- lm(MTS ~ Depth * Location,
+         data = trophic.mode
+)
+print("----- SUMMARY -----")
+summary(LM)
+print("----- ANOVA -----")
+anova(LM)
+plot(allEffects(LM))
+
+print("===== PTS =====")
+ggplot(
+  data = trophic.mode,
+  aes(x = Depth, y = PTS, color = Location, fill = Location))+
+  geom_smooth(
+    method = "lm", se = FALSE, lty = 2)+
+  geom_smooth(
+    method = "lm", se = TRUE, color = "black", fill = "grey50")+
+  geom_point(
+    size = 3, shape = 21, color = "black")+
+  ggtitle("PTS")
+
+LM <- lm(PTS ~ Depth * Location,
+         data = trophic.mode
+)
+print("----- SUMMARY -----")
+summary(LM)
+print("----- ANOVA -----")
+anova(LM)
+plot(allEffects(LM))
+
+```
+
+# f(surface) vs FWL in specific taxa
+
+Next thing we'll do is make a quick plot of f(surface) vs FWL for all the samples of specific taxa to see how we can summarize those two OMSM outputs.
+
+```{r fsurf-vs-trophic, dpi = 300, fig.width=7, fig.height=4}
+
+f.mode <-
+  subset(
+  bind_rows(
+    posts.5N$f$mode[c(variables,"Surface","Large","Small")],
+    posts.8N$f$mode[c(variables,"Surface","Large","Small")],
+    posts.ALOHAS$f$mode[c(variables,"Surface","Large","Small")],
+    posts.ALOHAW$f$mode[c(variables,"Surface","Large","Small")],
+    posts.OSP$f$mode[c(variables,"Surface","Large","Small")],
+    posts.PAP$f$mode[c(variables,"Surface","Large","Small")]),
+  Size != "0.06-0.2 mm" & Size != "0.2-0.5 mm" & Size != "1-2 mm" & Size != "2-5 mm" & Size != ">5 mm")# & Location == i)
+
+trophic.mode <-
+  subset(
+  bind_rows(
+    posts.5N$trophic$mode[c(variables,"PTS","MTS","FWL")],
+    posts.8N$trophic$mode[c(variables,"PTS","MTS","FWL")],
+    posts.ALOHAS$trophic$mode[c(variables,"PTS","MTS","FWL")],
+    posts.ALOHAW$trophic$mode[c(variables,"PTS","MTS","FWL")],
+    posts.OSP$trophic$mode[c(variables,"PTS","MTS","FWL")],
+    posts.PAP$trophic$mode[c(variables,"PTS","MTS","FWL")]),
+  Size != "0.06-0.2 mm" & Size != "0.2-0.5 mm" & Size != "1-2 mm" & Size != "2-5 mm" & Size != ">5 mm")# & Location == i)
+base.mode <- 
+  subset(
+  bind_rows(
+    posts.5N$base$mode[c(variables,"d15NAla","d15NPhe")],
+    posts.8N$base$mode[c(variables,"d15NAla","d15NPhe")],
+    posts.ALOHAS$base$mode[c(variables,"d15NAla","d15NPhe")],
+    posts.ALOHAW$base$mode[c(variables,"d15NAla","d15NPhe")],
+    posts.OSP$base$mode[c(variables,"d15NAla","d15NPhe")],
+    posts.PAP$base$mode[c(variables,"d15NAla","d15NPhe")]),
+  Size != "0.06-0.2 mm" & Size != "0.2-0.5 mm" & Size != "1-2 mm" & Size != "2-5 mm" & Size != ">5 mm")# & Location == i)
+trophic.mode$baseTP <- (base.mode$d15NAla - base.mode$d15NPhe - 3.2) / 6.3 + 1
+
+ftrophic.mode <- cbind(
+  f.mode, trophic.mode[c("FWL","PTS","MTS","baseTP")]
+)
+
+library(ggforce)
+hulls <- ftrophic.mode %>%
+  group_by(Size) %>%
+  slice(chull(Surface, baseTP+FWL))
+
+
+ggplot(
+  data = ftrophic.mode,
+  aes(y = baseTP+FWL, x = Surface, fill = Size, shape = Location, group = Size)
+)+
+  # geom_polygon(aes(group = Size), color = NA, alpha = 0.5)+
+  geom_shape(data = hulls, 
+             alpha = 0.5, expand = 0.03, radius = 0.03)+
+  geom_point(size = 3)+
+  # geom_shape(data = hulls, 
+  #            aes(y = baseTP),
+  #            alpha = 0.2, expand = 0.03, radius = 0.03)+
+  # geom_point(aes(y = baseTP), size = 3, alpha = 0.5)+
+  # stat_ellipse(aes(group = Size, fill = Size), alpha = 0.5,
+  #              level = 0.5, type = "norm", geom = "polygon")+
+  # geom_mark_hull(aes(group = Size, fill = Size), expand=0)+
+  
+  scale_shape_manual(values = c(21,22,23,24,21,22,23,24,21,22,23,24))+
+  # xlim(0,1)+ 
+  ylim(2,5)+
+  scale_x_continuous(breaks = c(0,0.5,1), limits = c(0,1))+
+  ylab("modelled TP")+
+  xlab("f(surface)")+
+  theme(legend.box = "horizontal")
+  # facet_wrap(~ Location)
+
+```
+
+# OSP/PAP Focused Depth Profiles {-}
+
+We really only need to communicate size class distinctions at Station Papa and in the North Atlantic, so let's make a quick composite plot summarizing thos results.
+
+```{r OSP-PAP_depth_profiles, DPI = 300, fig.width=8, fig.height=8, cache=FALSE}
+
+sizes <- c("0.06-0.2 mm", "0.2-0.5 mm", "1-2 mm", "2-5 mm", ">5 mm",
+           "Oithonid", "Harpactacoid", "Pleuromamma", "Peuromamma", "Ostracod", "Oncaeid", "Gaussia", "Chaetognath","Radiolarian", "Metridia", "Neocalanus","Gaetanus")
+
+f_depth_plots <- function(
+    posts
+){
+  f.mode <- 
+    subset(
+      posts$f$mode[c(variables,"Surface","Large","Small")],
+      Size == "0.2-0.5 mm" | Size == "1-2 mm" | Size == "2-5 mm" | Size == ">5 mm")# & Location == i)
+  f.mode.long <-
+    melt(f.mode,
+         id.vars = c(variables),
+         variable.name = "Source",
+         value.name = "f")
+  f.mode.long$Size <- factor(f.mode.long$Size, levels = sizes)
+  f.HDI95 <- 
+    subset(
+      posts$f$HDI95[c(variables,"Surface","Large","Small")],
+      Size == "0.2-0.5 mm" | Size == "1-2 mm" | Size == "2-5 mm" | Size == ">5 mm")# & Location == i)
+  f.HDI95.long <-
+    melt(f.HDI95,
+         id.vars = c(variables),
+         variable.name = "Source",
+         value.name = "f")
+  f.HDI95.long$Size <- factor(f.HDI95.long$Size, levels = sizes)
+  f.HDI90 <- 
+    subset(
+      posts$f$HDI90[c(variables,"Surface","Large","Small")],
+      Size == "0.2-0.5 mm" | Size == "1-2 mm" | Size == "2-5 mm" | Size == ">5 mm")# & Location == i)
+  f.HDI90.long <-
+    melt(f.HDI90,
+         id.vars = c(variables),
+         variable.name = "Source",
+         value.name = "f")
+  f.HDI90.long$Size <- factor(f.HDI90.long$Size, levels = sizes)
+  f.HDI75 <- 
+    subset(
+      posts$f$HDI75[c(variables,"Surface","Large","Small")],
+      Size == "0.2-0.5 mm" | Size == "1-2 mm" | Size == "2-5 mm" | Size == ">5 mm")# & Location == i)
+  f.HDI75.long <-
+    melt(f.HDI75,
+         id.vars = c(variables),
+         variable.name = "Source",
+         value.name = "f")
+  f.HDI75.long$Size <- factor(f.HDI75.long$Size, levels = sizes)
+  f.HDI50 <- 
+    subset(
+      posts$f$HDI50[c(variables,"Surface","Large","Small")],
+      Size == "0.2-0.5 mm" | Size == "1-2 mm" | Size == "2-5 mm" | Size == ">5 mm")# & Location == i)
+  f.HDI50.long <-
+    melt(f.HDI50,
+         id.vars = c(variables),
+         variable.name = "Source",
+         value.name = "f")
+  f.HDI50.long$Size <- factor(f.HDI50.long$Size, levels = sizes)
+  
+  # Appending columns with the min and max of the 95% HDI to the mode data frame.
+  f.mode.long$min95 <- f.HDI95.long$f[seq(1,nrow(f.HDI95.long),2)]
+  f.mode.long$max95 <- f.HDI95.long$f[seq(2,nrow(f.HDI95.long),2)]
+  
+  sizes <- c("0.2-0.5 mm", "1-2 mm", "2-5 mm", ">5 mm")
+  
+  # print(
+  ggplot()+
+    # geom_path(
+    #   data=f.mode.long,
+    #   aes(x=f, y=Depth, color = Size, group = interaction(Size)),
+    #   size = 1, alpha = 1,
+    #   position = position_dodgev(height = 100))+
+    geom_line(
+      data = f.HDI95.long,
+      aes(x = f, y = Depth, color = Size, group = interaction(Depth, Size)),
+      alpha = 0.5, size = 1,
+      position = position_dodgev(height = 100))+
+    geom_line(
+      data = f.HDI90.long,
+      aes(x = f, y = Depth, color = Size, group = interaction(Depth, Size)),
+      alpha = 0.7, size = 1.5,
+      position = position_dodgev(height = 100))+
+    geom_line(
+      data = f.HDI75.long,
+      aes(x = f, y = Depth, color = Size, group = interaction(Depth, Size)),
+      alpha = 1, size = 2,
+      position = position_dodgev(height = 100))+
+    geom_line(
+      data = f.HDI50.long,
+      aes(x = f, y = Depth, color = Size, group = interaction(Depth, Size)),
+      alpha = 1, size = 3,
+      position = position_dodgev(height = 100))+
+    geom_point(
+      data=f.mode.long,
+      aes(x=f, y=Depth, fill = Size, group = interaction(Depth, Size)),
+      size = 2.5, shape = 22,
+      position = position_dodgev(height = 100))+
+    labs()+
+    facet_wrap(~ Source)+
+    # facet_wrap(~ Source, nrow = 1)+
+    scale_y_reverse(breaks = c(0,250,500,750,1000,1250,1500), minor_breaks = c())+
+    scale_x_continuous(breaks = c(0,0.5,1), labels = c("0","0.5","1"), limits = c(0,1))+
+    coord_cartesian(ylim=c(NA,0))+
+    scale_color_manual(breaks = sizes,
+                       values = hue_pal()(length(sizes)))+
+    scale_fill_manual(breaks = sizes,
+                      values = hue_pal()(length(sizes)))+
+    theme_light()+
+    theme(strip.text.x = element_text(size = 8, face = "bold"),
+          axis.title.x = element_blank(),
+          axis.title.y = element_blank(),
+          plot.title = element_text(size=14, hjust=0.5))
+}
+
+trophic_depth_plots <- function(
+    posts
+){
+  trophic.mode <- 
+    subset(
+      posts$trophic$mode[c(variables,"FWL","PTS","MTS")],
+      Size == "0.2-0.5 mm" | Size == "1-2 mm" | Size == "2-5 mm" | Size == ">5 mm")# & Location == i)
+  trophic.mode.long <-
+    melt(trophic.mode,
+         id.vars = c(variables),
+         variable.name = "Source",
+         value.name = "value")
+  trophic.mode.long$Size <- factor(trophic.mode.long$Size, levels = sizes)
+  trophic.HDI95 <- 
+    subset(
+      posts$trophic$HDI95[c(variables,"FWL","PTS","MTS")],
+      Size == "0.2-0.5 mm" | Size == "1-2 mm" | Size == "2-5 mm" | Size == ">5 mm")# & Location == i)
+  trophic.HDI95.long <-
+    melt(trophic.HDI95,
+         id.vars = c(variables),
+         variable.name = "Source",
+         value.name = "value")
+  trophic.HDI95.long$Size <- factor(trophic.HDI95.long$Size, levels = sizes)
+  trophic.HDI90 <- 
+    subset(
+      posts$trophic$HDI90[c(variables,"FWL","PTS","MTS")],
+      Size == "0.2-0.5 mm" | Size == "1-2 mm" | Size == "2-5 mm" | Size == ">5 mm")# & Location == i)
+  trophic.HDI90.long <-
+    melt(trophic.HDI90,
+         id.vars = c(variables),
+         variable.name = "Source",
+         value.name = "value")
+  trophic.HDI90.long$Size <- factor(trophic.HDI90.long$Size, levels = sizes)
+  trophic.HDI75 <- 
+    subset(
+      posts$trophic$HDI75[c(variables,"FWL","PTS","MTS")],
+      Size == "0.2-0.5 mm" | Size == "1-2 mm" | Size == "2-5 mm" | Size == ">5 mm")# & Location == i)
+  trophic.HDI75.long <-
+    melt(trophic.HDI75,
+         id.vars = c(variables),
+         variable.name = "Source",
+         value.name = "value")
+  trophic.HDI75.long$Size <- factor(trophic.HDI75.long$Size, levels = sizes)
+  trophic.HDI50 <- 
+    subset(
+      posts$trophic$HDI50[c(variables,"FWL","PTS","MTS")],
+      Size == "0.2-0.5 mm" | Size == "1-2 mm" | Size == "2-5 mm" | Size == ">5 mm")# & Location == i)
+  trophic.HDI50.long <-
+    melt(trophic.HDI50,
+         id.vars = c(variables),
+         variable.name = "Source",
+         value.name = "value")
+  trophic.HDI50.long$Size <- factor(trophic.HDI50.long$Size, levels = sizes)
+  
+  # Appending columns with the min and max of the 95% HDI to the mode data frame.
+  trophic.mode.long$min95 <- trophic.HDI95.long$trophic[seq(1,nrow(trophic.HDI95.long),2)]
+  trophic.mode.long$max95 <- trophic.HDI95.long$trophic[seq(2,nrow(trophic.HDI95.long),2)]
+  
+  sizes <- c("0.2-0.5 mm", "1-2 mm", "2-5 mm", ">5 mm")
+  
+  # print(
+  ggplot()+
+    # geom_path(
+    #   data=trophic.mode.long,
+    #   aes(x=f, y=Depth, color = Size, group = interaction(Size)),
+    #   size = 1, alpha = 1,
+    #   position = position_dodgev(height = 100))+
+    geom_line(
+      data = trophic.HDI95.long,
+      aes(x = value, y = Depth, color = Size, group = interaction(Depth, Size)),
+      alpha = 0.5, size = 1,
+      position = position_dodgev(height = 100))+
+    geom_line(
+      data = trophic.HDI90.long,
+      aes(x = value, y = Depth, color = Size, group = interaction(Depth, Size)),
+      alpha = 0.7, size = 1.5,
+      position = position_dodgev(height = 100))+
+    geom_line(
+      data = trophic.HDI75.long,
+      aes(x = value, y = Depth, color = Size, group = interaction(Depth, Size)),
+      alpha = 1, size = 2,
+      position = position_dodgev(height = 100))+
+    geom_line(
+      data = trophic.HDI50.long,
+      aes(x = value, y = Depth, color = Size, group = interaction(Depth, Size)),
+      alpha = 1, size = 3,
+      position = position_dodgev(height = 100))+
+    geom_point(
+      data=trophic.mode.long,
+      aes(x = value, y=Depth, fill = Size, group = interaction(Depth, Size)),
+      size = 2.5, shape = 22,
+      position = position_dodgev(height = 100))+
+    labs()+
+    facet_wrap(~ Source)+
+    # facet_wrap(~ Source, nrow = 1)+
+    scale_y_reverse(breaks = c(0,250,500,750,1000,1250,1500), minor_breaks = c())+
+    scale_x_continuous(breaks = seq(-1,5,1), 
+                       minor_breaks = c(-0.5,5.5,1),
+                       labels = c("-1","0","1","2","3","4","5"))+
+    coord_cartesian(ylim=c(NA,0), xlim=c(0,NA))+
+    scale_color_manual(breaks = sizes,
+                       values = hue_pal()(length(sizes)))+
+    scale_fill_manual(breaks = sizes,
+                      values = hue_pal()(length(sizes)))+
+    theme_light()+
+    theme(strip.text.x = element_text(size = 8, face = "bold"),
+          axis.title.x = element_blank(),
+          axis.title.y = element_blank(),
+          plot.title = element_text(size=14, hjust=0.5))
+}
+
+plot.PAP.f <-
+  f_depth_plots(posts.PAP) + 
+  ggtitle("Proportional Contributions") + 
+  theme(axis.title.y = element_text(angle = 90, vjust = 3)) +
+  ylab("Depth (m)")
+plot.OSP.f <-
+  f_depth_plots(posts.OSP) + 
+  ggtitle("Proportional Contributions") + 
+  theme(axis.title.y = element_text(angle = 90, vjust  = 3)) +
+  ylab("Depth (m)")
+# plot.ALOHAS <-
+#   f_depth_plots(posts.ALOHAS) + ggtitle("ALOHA Summer")
+# plot.ALOHAW <-
+#   f_depth_plots(posts.ALOHAW) + ggtitle("ALOHA Winter")
+# plot.8N <-
+#   f_depth_plots(posts.8N) + ggtitle("8 N")
+# plot.5N <-
+#   f_depth_plots(posts.5N) + ggtitle("5 N")
+
+plot.PAP.trophic <-
+  trophic_depth_plots(posts.PAP) + ggtitle("Trophic Parameters")
+plot.OSP.trophic <-
+  trophic_depth_plots(posts.OSP) + ggtitle("Trophic Parameters")
+# plot.ALOHAS <-
+#   trophic_depth_plots(posts.ALOHAS) + ggtitle("ALOHA Summer")
+# plot.ALOHAW <-
+#   trophic_depth_plots(posts.ALOHAW) + ggtitle("ALOHA Winter")
+# plot.8N <-
+#   trophic_depth_plots(posts.8N) + ggtitle("8 N")
+# plot.5N <-
+#   trophic_depth_plots(posts.5N) + ggtitle("5 N")
+
+plot.blank <-
+  ggplot+geom_blank()+theme_bw()+theme(panel.border=element_blank())
+
+ggarrange(
+  
+  ggplot() + geom_blank() + ggtitle("North Atlantic") +
+    theme(plot.title = element_text(hjust = 0.5, face = "bold")),
+  
+  ggarrange(plot.PAP.f,    plot.PAP.trophic,
+            # plot.ALOHAS, plot.ALOHAW,
+            # plot.5N,     plot.8N,
+            ncol = 2, nrow=1,
+            common.legend = TRUE, legend="none"),
+  
+  ggplot() + geom_blank(),
+  
+  ggplot() + geom_blank() + ggtitle("Station Papa") +
+    theme(plot.title = element_text(hjust = 0.5, face = "bold")),
+  
+  ggarrange(plot.OSP.f,    plot.OSP.trophic,
+            # plot.ALOHAS, plot.ALOHAW,
+            # plot.5N,     plot.8N,
+            ncol = 2, nrow=1,
+            common.legend = TRUE, legend="bottom"),
+  
+  nrow = 5, heights = c(0.1,1,0.05,0.1,1.5)
+)
+```
+
+```{r OSP-PAP_biplots, DPI = 300, fig.width=5, fig.height=5, cache=FALSE}
+
+sizes <- c("0.06-0.2 mm", "0.2-0.5 mm", "1-2 mm", "2-5 mm", ">5 mm",
+           "Oithonid", "Harpactacoid", "Pleuromamma", "Peuromamma", "Ostracod", "Oncaeid", "Gaussia", "Chaetognath","Radiolarian", "Metridia", "Neocalanus","Gaetanus")
+f.mode <-
+  subset(
+  bind_rows(
+    posts.5N$f$mode[c(variables,"Surface","Large","Small")],
+    posts.8N$f$mode[c(variables,"Surface","Large","Small")],
+    posts.ALOHAS$f$mode[c(variables,"Surface","Large","Small")],
+    posts.ALOHAW$f$mode[c(variables,"Surface","Large","Small")],
+    posts.OSP$f$mode[c(variables,"Surface","Large","Small")],
+    posts.PAP$f$mode[c(variables,"Surface","Large","Small")]),
+  Size != "0.06-0.2 mm" & Size != "0.2-0.5 mm" & Size != "1-2 mm" & Size != "2-5 mm" & Size != ">5 mm")# & Location == i)
+f.mode.long <-
+  melt(f.mode,
+       id.vars = c(variables),
+       variable.name = "Source",
+       value.name = "f")
+f.mode.long$Size <- factor(f.mode.long$Size, levels = sizes)
+f.HDI95 <-
+  subset(
+    bind_rows(
+    posts.5N$f$HDI95[c(variables,"Surface","Large","Small")],
+    posts.8N$f$HDI95[c(variables,"Surface","Large","Small")],
+    posts.ALOHAS$f$HDI95[c(variables,"Surface","Large","Small")],
+    posts.ALOHAW$f$HDI95[c(variables,"Surface","Large","Small")],
+    posts.OSP$f$HDI95[c(variables,"Surface","Large","Small")],
+    posts.PAP$f$HDI95[c(variables,"Surface","Large","Small")]),
+  Size != "0.06-0.2 mm" & Size != "0.2-0.5 mm" & Size != "1-2 mm" & Size != "2-5 mm" & Size != ">5 mm")# & Location == i)
+f.HDI95.long <-
+  melt(f.HDI95,
+       id.vars = c(variables),
+       variable.name = "Source",
+       value.name = "f")
+f.HDI95.long$Size <- factor(f.HDI95.long$Size, levels = sizes)
+f.HDI90 <-
+  subset(
+    bind_rows(
+    posts.5N$f$HDI90[c(variables,"Surface","Large","Small")],
+    posts.8N$f$HDI90[c(variables,"Surface","Large","Small")],
+    posts.ALOHAS$f$HDI90[c(variables,"Surface","Large","Small")],
+    posts.ALOHAW$f$HDI90[c(variables,"Surface","Large","Small")],
+    posts.OSP$f$HDI90[c(variables,"Surface","Large","Small")],
+    posts.PAP$f$HDI90[c(variables,"Surface","Large","Small")]),
+  Size != "0.06-0.2 mm" & Size != "0.2-0.5 mm" & Size != "1-2 mm" & Size != "2-5 mm" & Size != ">5 mm")# & Location == i)
+f.HDI90.long <-
+  melt(f.HDI90,
+       id.vars = c(variables),
+       variable.name = "Source",
+       value.name = "f")
+f.HDI90.long$Size <- factor(f.HDI90.long$Size, levels = sizes)
+f.HDI75 <-
+  subset(
+    bind_rows(
+    posts.5N$f$HDI75[c(variables,"Surface","Large","Small")],
+    posts.8N$f$HDI75[c(variables,"Surface","Large","Small")],
+    posts.ALOHAS$f$HDI75[c(variables,"Surface","Large","Small")],
+    posts.ALOHAW$f$HDI75[c(variables,"Surface","Large","Small")],
+    posts.OSP$f$HDI75[c(variables,"Surface","Large","Small")],
+    posts.PAP$f$HDI75[c(variables,"Surface","Large","Small")]),
+  Size != "0.06-0.2 mm" & Size != "0.2-0.5 mm" & Size != "1-2 mm" & Size != "2-5 mm" & Size != ">5 mm")# & Location == i)
+f.HDI75.long <-
+  melt(f.HDI75,
+       id.vars = c(variables),
+       variable.name = "Source",
+       value.name = "f")
+f.HDI75.long$Size <- factor(f.HDI75.long$Size, levels = sizes)
+f.HDI50 <-
+  subset(
+    bind_rows(
+    posts.5N$f$HDI50[c(variables,"Surface","Large","Small")],
+    posts.8N$f$HDI50[c(variables,"Surface","Large","Small")],
+    posts.ALOHAS$f$HDI50[c(variables,"Surface","Large","Small")],
+    posts.ALOHAW$f$HDI50[c(variables,"Surface","Large","Small")],
+    posts.OSP$f$HDI50[c(variables,"Surface","Large","Small")],
+    posts.PAP$f$HDI50[c(variables,"Surface","Large","Small")]),
+  Size != "0.06-0.2 mm" & Size != "0.2-0.5 mm" & Size != "1-2 mm" & Size != "2-5 mm" & Size != ">5 mm")# & Location == i)
+f.HDI50.long <-
+  melt(f.HDI50,
+       id.vars = c(variables),
+       variable.name = "Source",
+       value.name = "f")
+f.HDI50.long$Size <- factor(f.HDI50.long$Size, levels = sizes)
+
+# Appending columns with the min and max of the 95% HDI to the mode data frame.
+f.mode.long$min95 <- f.HDI95.long$f[seq(1,nrow(f.HDI95.long),2)]
+f.mode.long$max95 <- f.HDI95.long$f[seq(2,nrow(f.HDI95.long),2)]
+
+trophic.mode <-
+  subset(
+  bind_rows(
+    posts.5N$trophic$mode[c(variables,"PTS","MTS","FWL")],
+    posts.8N$trophic$mode[c(variables,"PTS","MTS","FWL")],
+    posts.ALOHAS$trophic$mode[c(variables,"PTS","MTS","FWL")],
+    posts.ALOHAW$trophic$mode[c(variables,"PTS","MTS","FWL")],
+    posts.OSP$trophic$mode[c(variables,"PTS","MTS","FWL")],
+    posts.PAP$trophic$mode[c(variables,"PTS","MTS","FWL")]),
+  Size != "0.06-0.2 mm" & Size != "0.2-0.5 mm" & Size != "1-2 mm" & Size != "2-5 mm" & Size != ">5 mm")# & Location == i)
+trophic.mode.long <-
+  melt(trophic.mode,
+       id.vars = c(variables),
+       variable.name = "Source",
+       value.name = "value")
+trophic.mode.long$Size <- factor(trophic.mode.long$Size, levels = sizes)
+trophic.HDI95 <-
+  subset(
+    bind_rows(
+    posts.5N$trophic$HDI95[c(variables,"PTS","MTS","FWL")],
+    posts.8N$trophic$HDI95[c(variables,"PTS","MTS","FWL")],
+    posts.ALOHAS$trophic$HDI95[c(variables,"PTS","MTS","FWL")],
+    posts.ALOHAW$trophic$HDI95[c(variables,"PTS","MTS","FWL")],
+    posts.OSP$trophic$HDI95[c(variables,"PTS","MTS","FWL")],
+    posts.PAP$trophic$HDI95[c(variables,"PTS","MTS","FWL")]),
+  Size != "0.06-0.2 mm" & Size != "0.2-0.5 mm" & Size != "1-2 mm" & Size != "2-5 mm" & Size != ">5 mm")# & Location == i)
+trophic.HDI95.long <-
+  melt(trophic.HDI95,
+       id.vars = c(variables),
+       variable.name = "Source",
+       value.name = "value")
+trophic.HDI95.long$Size <- factor(trophic.HDI95.long$Size, levels = sizes)
+trophic.HDI90 <-
+  subset(
+    bind_rows(
+    posts.5N$trophic$HDI90[c(variables,"PTS","MTS","FWL")],
+    posts.8N$trophic$HDI90[c(variables,"PTS","MTS","FWL")],
+    posts.ALOHAS$trophic$HDI90[c(variables,"PTS","MTS","FWL")],
+    posts.ALOHAW$trophic$HDI90[c(variables,"PTS","MTS","FWL")],
+    posts.OSP$trophic$HDI90[c(variables,"PTS","MTS","FWL")],
+    posts.PAP$trophic$HDI90[c(variables,"PTS","MTS","FWL")]),
+  Size != "0.06-0.2 mm" & Size != "0.2-0.5 mm" & Size != "1-2 mm" & Size != "2-5 mm" & Size != ">5 mm")# & Location == i)
+trophic.HDI90.long <-
+  melt(trophic.HDI90,
+       id.vars = c(variables),
+       variable.name = "Source",
+       value.name = "value")
+trophic.HDI90.long$Size <- factor(trophic.HDI90.long$Size, levels = sizes)
+trophic.HDI75 <-
+  subset(
+    bind_rows(
+    posts.5N$trophic$HDI75[c(variables,"PTS","MTS","FWL")],
+    posts.8N$trophic$HDI75[c(variables,"PTS","MTS","FWL")],
+    posts.ALOHAS$trophic$HDI75[c(variables,"PTS","MTS","FWL")],
+    posts.ALOHAW$trophic$HDI75[c(variables,"PTS","MTS","FWL")],
+    posts.OSP$trophic$HDI75[c(variables,"PTS","MTS","FWL")],
+    posts.PAP$trophic$HDI75[c(variables,"PTS","MTS","FWL")]),
+  Size != "0.06-0.2 mm" & Size != "0.2-0.5 mm" & Size != "1-2 mm" & Size != "2-5 mm" & Size != ">5 mm")# & Location == i)
+trophic.HDI75.long <-
+  melt(trophic.HDI75,
+       id.vars = c(variables),
+       variable.name = "Source",
+       value.name = "value")
+trophic.HDI75.long$Size <- factor(trophic.HDI75.long$Size, levels = sizes)
+trophic.HDI50 <-
+  subset(
+    bind_rows(
+    posts.5N$trophic$HDI50[c(variables,"PTS","MTS","FWL")],
+    posts.8N$trophic$HDI50[c(variables,"PTS","MTS","FWL")],
+    posts.ALOHAS$trophic$HDI50[c(variables,"PTS","MTS","FWL")],
+    posts.ALOHAW$trophic$HDI50[c(variables,"PTS","MTS","FWL")],
+    posts.OSP$trophic$HDI50[c(variables,"PTS","MTS","FWL")],
+    posts.PAP$trophic$HDI50[c(variables,"PTS","MTS","FWL")]),
+  Size != "0.06-0.2 mm" & Size != "0.2-0.5 mm" & Size != "1-2 mm" & Size != "2-5 mm" & Size != ">5 mm")# & Location == i)
+trophic.HDI50.long <-
+  melt(trophic.HDI50,
+       id.vars = c(variables),
+       variable.name = "Source",
+       value.name = "value")
+trophic.HDI50.long$Size <- factor(trophic.HDI50.long$Size, levels = sizes)
+
+# Appending columns with the min and max of the 95% HDI to the mode data frame.
+trophic.mode.long$min95 <- trophic.HDI95.long$trophic[seq(1,nrow(trophic.HDI95.long),2)]
+trophic.mode.long$max95 <- trophic.HDI95.long$trophic[seq(2,nrow(trophic.HDI95.long),2)]
+
+biplot.data <- f.mode[1:7]
+biplot.data$Surface <- f.mode$Surface
+biplot.data$SurfaceMin <- f.HDI95$Surface[seq(1,nrow(f.HDI95),2)]
+biplot.data$SurfaceMax <- f.HDI95$Surface[seq(2,nrow(f.HDI95),2)]
+biplot.data$FWL <- trophic.mode$FWL
+biplot.data$FWLMin <- trophic.HDI95$FWL[seq(1,nrow(trophic.HDI95),2)]
+biplot.data$FWLMax <- trophic.HDI95$FWL[seq(2,nrow(trophic.HDI95),2)]
+
+biplot.data$Clade <- NA
+biplot.data[which(
+  biplot.data$Size == "Chaetognath" | biplot.data$Size == "Gaetanus"
+  ),]$Clade <- "Carnivore"
+biplot.data[which(
+  biplot.data$Size == "Oncaeid" | biplot.data$Size == "Oithonid"  
+  ),]$Clade <- "Particle Feeder"
+biplot.data[which(
+  biplot.data$Size == "Metridia" | biplot.data$Size == "Pleuromamma" | biplot.data$Size == "Harpactacoid"
+  ),]$Clade <- "Vertical Migrator"
+
+biplot.data <-
+  subset(biplot.data, !is.na(Clade))
+
+
+ggplot(
+  data = subset(biplot.data),
+  aes(x = Surface, xmax = SurfaceMax, xmin = SurfaceMin,
+      y = FWL, ymax = FWLMax, ymin = FWLMin,
+      color = Clade, fill = Clade)
+  ) +
+  geom_point() +
+  stat_ellipse(type = "t", level = 0.95, geom = "polygon", alpha = 0.2) +
+  labs(color = "Feeding Clade", fill = "Feeding Clade")
+
+```
+
+# Corrected $\dNSAA$ profiles {-}
+
+Let's also try plotting depth profiles of the average $\dN$ values of all SAAs (Ser, Gly, Phe, Lys) after being corrected for trophic discrimination, alongside those of traps and particles.
+
+```{r SAA-depth_profiles, warning=FALSE, dpi=300, fig.width=8.5, fig.height=5}
+
+sizes <- c("0.06-0.2 mm", "0.2-0.5 mm", "1-2 mm", "2-5 mm", ">5 mm",
+           "Oithonid", "Harpactacoid", "Pleuromamma", "Peuromamma", "Ostracod", "Oncaeid", "Gaussia", "Chaetognath","Radiolarian", "Metridia", "Neocalanus","Gaetanus")
+variables.temp <- colnames(posts$base$mode)[1:9]
+base.mode <- 
+  subset(
+  bind_rows(
+    posts.5N$base$mode,
+    posts.8N$base$mode,
+    posts.ALOHAS$base$mode,
+    posts.ALOHAW$base$mode,
+    posts.OSP$base$mode,
+    posts.PAP$base$mode),
+  Size != "0.06-0.2 mm")# & Location == i)
+base.mode$SAA <- rowMeans(cbind(base.mode$d15NSer, base.mode$d15NGly, base.mode$d15NPhe, base.mode$d15NLys), na.rm = TRUE)
+base.mode.long <-
+  melt(base.mode,
+       id.vars = c(variables.temp),
+       variable.name = "AA",
+       value.name = "d15N")
+base.mode.long$Size <- factor(base.mode.long$Size, levels = sizes)
+base.HDI95 <- 
+  subset(
+    bind_rows(
+    posts.5N$base$HDI95,
+    posts.8N$base$HDI95,
+    posts.ALOHAS$base$HDI95,
+    posts.ALOHAW$base$HDI95,
+    posts.OSP$base$HDI95,
+    posts.PAP$base$HDI95),
+  Size != "0.06-0.2 mm")# & Location == i)
+base.HDI95$SAA <- rowMeans(cbind(base.HDI95$d15NSer, base.HDI95$d15NGly, base.HDI95$d15NPhe, base.HDI95$d15NLys), na.rm = TRUE)
+base.HDI95.long <-
+  melt(base.HDI95,
+       id.vars = c(variables.temp),
+       variable.name = "AA",
+       value.name = "d15N")
+base.HDI95.long$Size <- factor(base.HDI95.long$Size, levels = sizes)
+base.HDI90 <- 
+  subset(
+    bind_rows(
+    posts.5N$base$HDI90,
+    posts.8N$base$HDI90,
+    posts.ALOHAS$base$HDI90,
+    posts.ALOHAW$base$HDI90,
+    posts.OSP$base$HDI90,
+    posts.PAP$base$HDI90),
+  Size != "0.06-0.2 mm")# & Location == i)
+base.HDI90$SAA <- rowMeans(cbind(base.HDI90$d15NSer, base.HDI90$d15NGly, base.HDI90$d15NPhe, base.HDI90$d15NLys), na.rm = TRUE)
+base.HDI90.long <-
+  melt(base.HDI90,
+       id.vars = c(variables.temp),
+       variable.name = "AA",
+       value.name = "d15N")
+base.HDI90.long$Size <- factor(base.HDI90.long$Size, levels = sizes)
+base.HDI75 <- 
+  subset(
+    bind_rows(
+    posts.5N$base$HDI75,
+    posts.8N$base$HDI75,
+    posts.ALOHAS$base$HDI75,
+    posts.ALOHAW$base$HDI75,
+    posts.OSP$base$HDI75,
+    posts.PAP$base$HDI75),
+  Size != "0.06-0.2 mm")# & Location == i)
+base.HDI75$SAA <- rowMeans(cbind(base.HDI75$d15NSer, base.HDI75$d15NGly, base.HDI75$d15NPhe, base.HDI75$d15NLys), na.rm = TRUE)
+base.HDI75.long <-
+  melt(base.HDI75,
+       id.vars = c(variables.temp),
+       variable.name = "AA",
+       value.name = "d15N")
+base.HDI75.long$Size <- factor(base.HDI75.long$Size, levels = sizes)
+base.HDI50 <- 
+  subset(
+    bind_rows(
+    posts.5N$base$HDI50,
+    posts.8N$base$HDI50,
+    posts.ALOHAS$base$HDI50,
+    posts.ALOHAW$base$HDI50,
+    posts.OSP$base$HDI50,
+    posts.PAP$base$HDI50),
+  Size != "0.06-0.2 mm")# & Location == i)
+base.HDI50$SAA <- rowMeans(cbind(base.HDI50$d15NSer, base.HDI50$d15NGly, base.HDI50$d15NPhe, base.HDI50$d15NLys), na.rm = TRUE)
+base.HDI50.long <-
+  melt(base.HDI50,
+       id.vars = c(variables.temp),
+       variable.name = "AA",
+       value.name = "d15N")
+base.HDI50.long$Size <- factor(base.HDI50.long$Size, levels = sizes)
+
+# Appending columns with the min and max of the 95% HDI to the mode data frame.
+base.mode.long$min95 <- base.HDI95.long$f[seq(1,nrow(base.HDI95.long),2)]
+base.mode.long$max95 <- base.HDI95.long$f[seq(2,nrow(base.HDI95.long),2)]
+
+data.all$SAA <- rowMeans(cbind(data.all$d15NSer, data.all$d15NGly, data.all$d15NPhe, data.all$d15NLys), na.rm = TRUE)
+    
+  data.plots.traps <- subset(data.all, Event == "Trap Deployment")
+  data.plots.parts <- subset(data.all, Event == "Pump Cast" & Sizecat != "Surface")
+  data.plots.zoops <- subset(base.mode, Size == "0.2-0.5 mm" | Size == "1-2 mm" | Size == "2-5 mm" | Size == ">5 mm")
+  maxdepth <-
+    round(max(data.plots.zoops$Depth)+50, -2)
+  
+  ggplot()+
+    geom_smooth( # Particles
+      data = data.plots.parts,
+      aes(x = SAA, y = Depth, color = Sizecat, fill = Sizecat, group = Sizecat), 
+      orientation = "y", level=0.75, span=1.2)+
+    geom_point(
+      data = data.plots.parts,
+      aes(x = SAA, y = Depth, color = Sizecat, fill = Sizecat, group = Sizecat), 
+      size=1, shape=21, alpha=0.7)+
+    geom_point( # Zooplankton
+      data = data.plots.zoops,
+      aes(x = SAA, y = Depth, shape = Size),
+      color = "black", size = 1.5, stroke = 0.95)+
+    # geom_path(
+    #   data = data.plots.zoops,
+    #   aes(x = SAA, y = Depth, group = Size, inherit = FALSE),
+    #   color = "black", size = 1, linetype = "solid", alpha = 0.5)+
+    geom_smooth(
+      data = data.plots.zoops,
+      aes(x = SAA, y = Depth),
+      orientation = "y", level=0.95, span=0.9, color = "black", se = FALSE)+
+    # geom_errorbarh(
+    #   data = data.plots.zoops,
+    #   aes(x = SAA, y = Depth, xmin = min95, xmax = max95), 
+    #   height = 1, size = 0.5, linetype = 1, color = 'black')+
+    geom_point( # Sediment Traps
+      data = data.plots.traps,
+      aes(x = SAA, y = Depth, color = Sizecat, fill = Sizecat),
+      size = 1.5, stroke = 0.75, shape = 6)+
+    # geom_errorbarh(
+    #   data = data.plots.traps,
+    #   aes(x = SAA, y = Depth, xmin = min95, xmax = max95), 
+    #   height = 1, size = 0.5, linetype = 1, color = 'black')+
+    scale_y_reverse() + ylab('Depth (m)') +
+    scale_x_continuous(minor_breaks = seq(-8,16,2), breaks = seq(-8,16,4))+ 
+    xlab(expression(delta^{15}*"N"[SAA]*" (\u2030)")) + 
+    labs(color = "Particles", fill="Particles", shape = "Zooplankton")+
+    theme_light()+theme(strip.text.x = element_text(size = 8))+ 
+    coord_cartesian(expand = FALSE, ylim = c(maxdepth,0))+
+    facet_wrap(~ interaction(Location), nrow = 2, scales = "free", dir="v")+
+    scale_color_discrete(type = c("#F8766D", "#00BA38", "#619CFF","black"))+
+    scale_fill_discrete(type = c("#F8766D", "#00BA38", "#619CFF","white"))
+# }
+
+```
+
+# Are trophic parameters related to f(surface)? {-}
+
+```{r trophic-vs-f, dpi = 300, fig.width = 5, fig.asp = 0.6}
+trophic.mode <- 
+  bind_rows(
+    posts.5N$trophic$mode[c(variables,"PTS","MTS","FWL")],
+    posts.8N$trophic$mode[c(variables,"PTS","MTS","FWL")],
+    posts.ALOHAS$trophic$mode[c(variables,"PTS","MTS","FWL")],
+    posts.ALOHAW$trophic$mode[c(variables,"PTS","MTS","FWL")],
+    posts.OSP$trophic$mode[c(variables,"PTS","MTS","FWL")],
+    posts.PAP$trophic$mode[c(variables,"PTS","MTS","FWL")])
+  # Size != "0.06-0.2 mm")
+trophic.mode$baseTP <- (base.mode$d15NAla - base.mode$d15NPhe - 3.2) / 6.3 + 1
+trophic.mode <- 
+  subset(trophic.mode, Size == "0.2-0.5 mm" | Size == "1-2 mm" | Size == "2-5 mm" | Size == ">5 mm")
+
+f.mode <-
+  subset(
+  bind_rows(
+    posts.5N$f$mode[c(variables,"Surface","Large","Small")],
+    posts.8N$f$mode[c(variables,"Surface","Large","Small")],
+    posts.ALOHAS$f$mode[c(variables,"Surface","Large","Small")],
+    posts.ALOHAW$f$mode[c(variables,"Surface","Large","Small")],
+    posts.OSP$f$mode[c(variables,"Surface","Large","Small")],
+    posts.PAP$f$mode[c(variables,"Surface","Large","Small")]),
+  # Size != "0.06-0.2 mm")
+  Size == "0.2-0.5 mm" | Size == "1-2 mm" | Size == "2-5 mm" | Size == ">5 mm")
+
+posterior.modes <- cbind(trophic.mode, f.mode[c("Surface","Large","Small")])
+
+ggplot(
+  data = subset(posterior.modes, Depth > 200),
+  aes(x = Surface, y = FWL, color = -Depth, fill = -Depth))+
+  geom_smooth(
+    method = "lm", se = FALSE, lty = 2)+
+  geom_smooth(
+    method = "lm", se = TRUE, color = "black", fill = "grey50")+
+  geom_point(
+    size = 3, shape = 21, color = "black")
+
+LM <- lm(
+  FWL ~ Surface + Depth,
+  data = posterior.modes)
+summary(LM)
+anova(LM)
+plot(allEffects(LM))
+
+ggplot(
+  data = subset(posterior.modes, Depth > 200),
+  aes(x = Surface, y = baseTP, color = -Depth, fill = -Depth))+
+  geom_smooth(
+    method = "lm", se = FALSE, lty = 2)+
+  geom_smooth(
+    method = "lm", se = TRUE, color = "black", fill = "grey50")+
+  geom_point(
+    size = 3, shape = 21, color = "black")
+```
+
+
+# Comparison with oceanographic parameters - all samples {-}
+
+Now that we've established values for mixing coefficients and trophic coefficients for zooplankton across these various locations, we'd like to examine some potential basin-scale trends in these parameters. Here are the variables we think might reasonably predict the importance of different organic matter sources to the food web.
+
+**Depth: ** distance from the surface should influence the importance of surface organic matter to the food web. We also might expect that smaller particles might become a more important food source at depth, though this might not be a linear effect.
+
+**NPP: ** The amount of NPP occurring in a given location should dictate the amount of sinking material available to MPZ communities. On the other hand, more NPP is also generally correlateed with more DVM.
+
+**EXPORT: ** The amount of POM leaving the euphotic zone should also impact thee importance of sinking particles to the MPZ community.
+
+**DVM Biomass: ** The quantity of animals doing DVM should directly influence the availability of surface POM to the MPZ community.
+
+**Export Ratio: ** The ratio of NPP to EXPORT is related to how efficiently the EZ community consumes primary production. A low export ratio would indicate high NPP with low export, which should favor DVM as a strategy for bringing carbon to depth. A high export ratio should favor a sit and wait strategy of consuming sinking POM within the MPZ.
+
+Let's do some quick regressions to assess these hypotheses. Of course, this exercise has been done before by Romero-romero et al. (2020). We are simply repeating it with revised mixing model results.
+
+Since we are essentially regressing compositional data, a binomial or quasibinomial distribution would probably be best.
+
+```{r}
+data.romero <- as.data.frame(read_excel("Data/Romero-Romero2020.xlsx", sheet = "Romero-Romero2020(wPAP)" ))
+
+f.mode <- 
+  subset(
+    bind_rows(
+    posts.5N$f$mode[c(variables,"Surface","Large","Small")],
+    posts.8N$f$mode[c(variables,"Surface","Large","Small")],
+    posts.ALOHAS$f$mode[c(variables,"Surface","Large","Small")],
+    posts.ALOHAW$f$mode[c(variables,"Surface","Large","Small")],
+    posts.OSP$f$mode[c(variables,"Surface","Large","Small")],
+    posts.PAP$f$mode[c(variables,"Surface","Large","Small")]),
+    Size == "0.2-0.5 mm" | Size == "1-2 mm" | Size == "2-5 mm" | Size == ">5 mm"
+    # Size == "0.2-0.5 mm" | 
+    # Size == "1-2 mm"
+    )
+
+# WORKING ON POOLING SIZE CLASSES WITHIN EACH DEPTH AT EACH LOCATION
+f.mode.pooled <- aggregate(
+  x = cbind(Surface, Large, Small) ~ Location + Epoch + Event + Depth + Type,
+  data = f.mode,
+  FUN = mean
+  )
+
+
+trophic.mode <- 
+  subset(
+  bind_rows(
+    posts.5N$trophic$mode[c(variables,"PTS","MTS","FWL")],
+    posts.8N$trophic$mode[c(variables,"PTS","MTS","FWL")],
+    posts.ALOHAS$trophic$mode[c(variables,"PTS","MTS","FWL")],
+    posts.ALOHAW$trophic$mode[c(variables,"PTS","MTS","FWL")],
+    posts.OSP$trophic$mode[c(variables,"PTS","MTS","FWL")],
+    posts.PAP$trophic$mode[c(variables,"PTS","MTS","FWL")]),
+  Size != "0.06-0.2 mm")# & Location == i)
+# Let's calculate TP at the base of the food web
+base.mode <- 
+  subset(
+  bind_rows(
+    posts.5N$base$mode[c(variables,"d15NAla","d15NPhe")],
+    posts.8N$base$mode[c(variables,"d15NAla","d15NPhe")],
+    posts.ALOHAS$base$mode[c(variables,"d15NAla","d15NPhe")],
+    posts.ALOHAW$base$mode[c(variables,"d15NAla","d15NPhe")],
+    posts.OSP$base$mode[c(variables,"d15NAla","d15NPhe")],
+    posts.PAP$base$mode[c(variables,"d15NAla","d15NPhe")]),
+  Size != "0.06-0.2 mm")# & Location == i)
+trophic.mode$baseTP <- (base.mode$d15NAla - base.mode$d15NPhe - 3.2) / 6.3 + 1
+trophic.mode$Size <- factor(trophic.mode$Size, levels = sizes)
+
+trophic.mode.mean <- aggregate(
+  x = cbind(FWL,baseTP) ~ Depth + Location,
+  data = subset(trophic.mode,
+                Size == "0.2-0.5 mm" | Size == "1-2 mm" | 
+                  Size == "2-5 mm" | Size == ">5 mm"),
+  FUN = "mean"
+)
+```
+
+## Depth {-}
+
+We'll look at trends across depth at each location. Looking at the depth profile above, we see that if there is a depth dependence in mixing coefficients its is probably non-linear. We'll start, then, by taking the square root transform of depth.
+
+First we will do this on all the data across all locations.
+
+```{r Depth, fig.width=8, fig.asp=0.4}
+
+print("===== SURFACE =====")
+plot1 <- ggplot(
+  data = f.mode.pooled,
+  aes(x = Depth, y = Surface, color = Location, fill = Location))+
+  geom_smooth(
+    method = "glm", method.args = list(family = quasibinomial()),
+    se = TRUE, alpha = 0.2, color = "black", fill = "grey50")+
+  geom_point(
+    size = 3, shape = 21, color = "black")+
+  ggtitle("Surface")
+MOD1 <- glm(Surface ~ Depth,
+         data = f.mode.pooled,
+         family = quasibinomial())
+print("----- SUMMARY -----")
+summary(MOD1)
+print("----- ANOVA -----")
+anova(MOD1)
+# plot(allEffects(MOD1))
+
+print("===== LARGE =====")
+plot2 <- ggplot(
+  data = f.mode.pooled,
+  aes(x = Depth, y = Large, color = Location, fill = Location))+
+  geom_smooth(
+    method = "glm", method.args = list(family = quasibinomial()),
+    se = TRUE, alpha = 0.2, color = "black", fill = "grey50")+
+  geom_point(
+    size = 3, shape = 21, color = "black")+
+  ggtitle("Large")
+MOD2 <- glm(Large ~ Depth,
+         data = f.mode.pooled,
+         family = quasibinomial()
+)
+print("----- SUMMARY -----")
+summary(MOD2)
+print("----- ANOVA -----")
+anova(MOD2)
+# plot(allEffects(MOD2))
+
+print("===== SMALL =====")
+plot3 <- ggplot(
+  data = f.mode.pooled,
+  aes(x = Depth, y = Small, color = Location, fill = Location))+
+  geom_smooth(
+    method = "glm", method.args = list(family = quasibinomial()),
+    se = TRUE, alpha = 0.2, color = "black", fill = "grey50")+
+  geom_point(
+    size = 3, shape = 21, color = "black")+
+  ggtitle("Small")
+MOD3 <- glm(Small ~ Depth,
+         data = f.mode.pooled,
+         family = quasibinomial()
+)
+print("----- SUMMARY -----")
+summary(MOD3)
+print("----- ANOVA -----")
+anova(MOD3)
+# plot(allEffects(MOD3))
+
+ggarrange(
+  plot1, plot2, plot3,
+  nrow = 1, common.legend = TRUE, legend = "bottom"
+)
+```
+
+There appears to be a statistically significant relationship between f(surface) and Depth. This is true for the aggregated data (p = `r anova(MOD1)[2,6]`), but the fit is poor because of high values for f(surface) at deeper depths at ALOHA. There is also true for f(small) (p = `r anova(MOD3)[2,6]`)
+
+Now we'll specify location as a second predictor.
+
+```{r Depth-Location, fig.width=8, fig.height=6, eval=FALSE}
+
+print("===== SURFACE =====")
+
+plot1 <- ggplot(
+  data = f.mode,
+  aes(x = Depth, y = Surface, color = Size, fill = Size))+
+  geom_smooth(
+    method = "glm", method.args = list(family = quasibinomial()),
+    se = TRUE, alpha = 0.2)+
+  geom_point(
+    size = 3, shape = 21, color = "black")+
+  facet_wrap(~ Location, nrow=1)+
+  ylim(0,1)+
+  ggtitle("Surface")
+MOD1 <- glm(Surface ~ Depth + Location + Size,
+         data = f.mode,
+         family = quasibinomial())
+print("----- SUMMARY -----")
+summary(MOD1)
+print("----- ANOVA -----")
+anova(MOD1)
+plot(allEffects(MOD1))
+
+print("===== LARGE =====")
+plot2 <- ggplot(
+  data = f.mode,
+  aes(x = Depth, y = Large, color = Size, fill = Size))+
+  geom_smooth(
+    method = "glm", method.args = list(family = quasibinomial()),
+    se = TRUE, alpha = 0.2)+
+  geom_point(
+    size = 3, shape = 21, color = "black")+
+  facet_wrap(~ Location, nrow=1)+
+  ylim(0,1)+
+  ggtitle("Large")
+MOD2 <- glm(Large ~ Depth + Location + Size,
+         data = f.mode,
+         family = quasibinomial())
+print("----- SUMMARY -----")
+summary(MOD2)
+print("----- ANOVA -----")
+anova(MOD2)
+plot(allEffects(MOD2))
+
+print("===== SMALL =====")
+plot3 <- ggplot(
+  data = f.mode,
+  aes(x = Depth, y = Small, color = Size, fill = Size))+
+  geom_smooth(
+    method = "glm", method.args = list(family = quasibinomial()),
+    se = TRUE, alpha = 0.2)+
+  geom_point(
+    size = 3, shape = 21, color = "black")+
+  facet_wrap(~ Location, nrow=1)+
+  ylim(0,1)+
+  ggtitle("Small")
+MOD3 <- glm(Small ~ Depth + Location + Size,
+         data = f.mode,
+         family = quasibinomial())
+print("----- SUMMARY -----")
+summary(MOD3)
+print("----- ANOVA -----")
+anova(MOD3)
+plot(allEffects(MOD3))
+
+ggarrange(
+  plot1, plot2, plot3,
+  nrow = 3, common.legend = TRUE, legend = "bottom"
+)
+```
+
+The fit with f(surface) is much stronger when location is included as a predictor in the model (p = `r anova(MOD1)[2,6]`). Location is a also a significant predictor (p = `r anova(MOD1)[3,6]`).
+
+This suggests that in general surface particles become less important at deeper depths, but that the nature of this relationship is location specific. Let's figure out what is driving these trends across space by looking using site-specific oceanographic variables as predictors. We will need to include depth as a predictor in these models as well, though we may choose to do this by just subsetting the data within specific depth bins.
+
+## NPP {-}
+
+```{r incorportating-NPP-data}
+locs <- unique(f.mode$Location)
+for (i in locs) {
+  f.mode$NPP[which(f.mode$Location == i)] <- 
+    data.romero$`NPP (best)`[which(data.romero$Site == i)]
+}
+locs <- unique(f.mode.pooled$Location)
+f.mode.pooled$NPP <- NA
+for (i in locs) {
+  f.mode.pooled$NPP[which(f.mode.pooled$Location == i)] <-
+    data.romero$`NPP (best)`[which(data.romero$Site == i)]
+}
+
+locs <- unique(f.mode.pooled$Location)
+trophic.mode.mean$NPP <- NA
+for (i in locs) {
+  trophic.mode.mean$NPP[which(trophic.mode.mean$Location == i)] <-
+    data.romero$`NPP (best)`[which(data.romero$Site == i)]
+}
+```
+
+First we'll try just doing a glm with NPP as a predictor for f(surface).
+
+```{r NPP, fig.width=8, fig.asp=0.4}
+
+print("===== SURFACE =====")
+
+plot1 <- ggplot(
+  data = f.mode.pooled,
+  aes(x = NPP, y = Surface, color = Location, fill = Location))+
+  geom_smooth(
+    data = subset(f.mode.pooled, Location != "PAP"),
+    method = "glm", method.args = list(family = quasibinomial()),
+    se = TRUE, color = "black", fill="grey")+
+  geom_point(
+    size = 3, shape = 21, color = "black")+
+  ylim(0,1)+
+  ggtitle("Surface")
+MOD1 <- glm(Surface ~ NPP,
+         data = f.mode,
+         family = quasibinomial())
+print("----- SUMMARY -----")
+summary(MOD1)
+print("----- ANOVA -----")
+anova(MOD1)
+# plot(allEffects(MOD1))
+
+print("===== LARGE =====")
+plot2 <- ggplot(
+  data = f.mode.pooled,
+  aes(x = NPP, y = Large, color = Location, fill = Location))+
+  geom_smooth(
+    data = subset(f.mode.pooled, Location != "PAP"),
+    method = "glm", method.args = list(family = quasibinomial()),
+    se = TRUE, color = "black", fill="grey")+
+  geom_point(
+    size = 3, shape = 21, color = "black")+
+  ylim(0,1)+
+  ggtitle("Large")
+MOD2 <- glm(Large ~ NPP,
+         data = f.mode,
+         family = quasibinomial())
+print("----- SUMMARY -----")
+summary(MOD2)
+print("----- ANOVA -----")
+anova(MOD2)
+# plot(allEffects(MOD2))
+
+print("===== SMALL =====")
+plot3 <- ggplot(
+  data = f.mode.pooled,
+  aes(x = NPP, y = Small, color = Location, fill = Location))+
+  geom_smooth(
+    data = subset(f.mode.pooled, Location != "PAP"),
+    method = "glm", method.args = list(family = quasibinomial()),
+    se = TRUE, color = "black", fill="grey")+
+  geom_point(
+    size = 3, shape = 21, color = "black")+
+  ylim(0,1)+
+  ggtitle("Small")
+MOD3 <- glm(Small ~ NPP,
+         data = f.mode,
+         family = quasibinomial())
+print("----- SUMMARY -----")
+summary(MOD3)
+print("----- ANOVA -----")
+anova(MOD3)
+# plot(allEffects(MOD3))
+
+ggarrange(
+  plot1, plot2, plot3,
+  nrow = 1, common.legend = TRUE, legend = "bottom"
+)
+
+```
+
+We also want to look and see if FWL or TP at the base of the foodweb are related to NPP.
+
+```{r NPP-trophic, fig.width=5, fig.height=3, dpi=300}
+
+ggarrange(
+
+ggplot(
+  data = subset(trophic.mode.mean, Depth>200),
+  aes(x = NPP, y = baseTP, color = Location, fill = Location))+
+  geom_smooth(
+    data = subset(trophic.mode.mean),
+    method = "lm", formula = y ~ poly(x, 2),
+    se = TRUE, color = "black", fill="grey", )+
+  geom_point(
+    size = 3, shape = 21, color = "black")+
+  theme(axis.title.x = element_blank(), 
+        axis.text.x = element_blank())+
+  ylim(1,2.5)
+  ,
+
+ggplot(
+  data = subset(trophic.mode.mean, Depth>200),
+  aes(x = NPP, y = FWL, color = Location, fill = Location))+
+  geom_line(
+    data = trophic.HDI95.long,
+    aes(x = value, y = Depth, color = Size, group = interaction(Depth, Size)),
+    alpha = 0.5, size = 1,
+    position = position_dodgev(height = 100))+
+  geom_line(
+    data = trophic.HDI90.long,
+    aes(x = value, y = Depth, color = Size, group = interaction(Depth, Size)),
+    alpha = 0.7, size = 1.5,
+    position = position_dodgev(height = 100))+
+  geom_line(
+    data = trophic.HDI75.long,
+    aes(x = value, y = Depth, color = Size, group = interaction(Depth, Size)),
+    alpha = 1, size = 2,
+    position = position_dodgev(height = 100))+
+  geom_line(
+    data = trophic.HDI50.long,
+    aes(x = value, y = Depth, color = Size, group = interaction(Depth, Size)),
+    alpha = 1, size = 3,
+    position = position_dodgev(height = 100))+
+  geom_smooth(
+    data = subset(trophic.mode.mean),
+    method = "lm", formula = y ~ poly(x, 2),
+    se = TRUE, color = "black", fill="grey", )+
+  geom_point(
+    size = 3, shape = 21, color = "black")+
+  ylim(1,2.5),
+
+nrow = 2,
+heights = c(1,1.2),
+legend = "right",
+common.legend = TRUE
+)
+
+```
+
+This is showing that NPP is a significant predictor of f(surface) (p = `r anova(MOD1)[2,6]`), f(large) (p = `r anova(MOD2)[2,6]`), and f(small) (p = `r anova(MOD3)[2,6]`). 
+
+We know depth is a significant predictor so lets also include that in the GLM. We would include size, but we dont have enough representation of some sizes across sites so it doesn't come out as being significant.
+
+```{r NPP-Depth, fig.width=8, fig.height=4}
+
+MOD1 <- glm(Surface ~ NPP + Depth,
+         data = f.mode,
+         family = quasibinomial())
+print("----- SUMMARY -----")
+summary(MOD1)
+print("----- ANOVA -----")
+anova(MOD1)
+plot(allEffects(MOD1))
+
+print("===== LARGE =====")
+
+MOD2 <- glm(Large ~ NPP + Depth,
+         data = f.mode,
+         family = quasibinomial())
+print("----- SUMMARY -----")
+summary(MOD2)
+print("----- ANOVA -----")
+anova(MOD2)
+plot(allEffects(MOD2))
+
+print("===== SMALL =====")
+MOD3 <- glm(Small ~ NPP + Depth,
+         data = f.mode,
+         family = quasibinomial())
+print("----- SUMMARY -----")
+summary(MOD3)
+print("----- ANOVA -----")
+anova(MOD3)
+plot(allEffects(MOD3))
+```
+
+NPP continues to be a significant predictor of f(surface) (p = `r anova(MOD1)[2,6]`), f(large) (p = `r anova(MOD2)[2,6]`), and f(small) (p = `r anova(MOD3)[2,6]`). 
+
+It's hard to to plot that effect, and we may more interested in these relationships within specific depth strata, so let's make some plots just looking at the EZ (0-100 m), the upper MPZ (200-700 m), the lower MPZ (700-1500 m).
+
+```{r DepthStrata-NPP, fig.width=8, fig.height=6, warning=FALSE}
+
+f.mode$Strata <- factor("EZ", 
+                        levels = c("EZ","MPZ upper","MPZ lower","Bathyl"))
+f.mode$Strata[which(f.mode$Depth > 100)] <- "MPZ upper"
+f.mode$Strata[which(f.mode$Depth > 700)] <- "MPZ lower"
+# f.mode$Strata[which(f.mode$Depth > 1000)] <- "Bathyl"
+
+f.mode.pooled$Strata <- factor("EZ", 
+                        levels = c("EZ","MPZ upper","MPZ lower","Bathyl"))
+f.mode.pooled$Strata[which(f.mode.pooled$Depth > 100)] <- "MPZ upper"
+f.mode.pooled$Strata[which(f.mode.pooled$Depth > 700)] <- "MPZ lower"
+# f.mode.pooled$Strata[which(f.mode.pooled$Depth > 1000)] <- "Bathyl"
+
+print("===== SURFACE =====")
+
+plot1 <- ggplot(
+  data = f.mode.pooled,
+  aes(x = NPP, y = Surface, color = Location, fill = Location))+
+  geom_smooth(
+    data = subset(f.mode.pooled, Location != "PAP"),
+    method = "glm", method.args = list(family = quasibinomial()),
+    se = TRUE, alpha = 0.2, color = "black", fill = "black")+
+  geom_point(
+    size = 3, shape = 21, color = "black")+
+  facet_wrap(~ Strata, nrow = 3)+
+  ylim(0,1)+
+  ggtitle("Surface")
+MOD1 <- glm(Surface ~ Depth + NPP,
+         data = f.mode.pooled,
+         family = quasibinomial())
+print("----- SUMMARY -----")
+summary(MOD1)
+print("----- ANOVA -----")
+anova(MOD1)
+# plot(allEffects(MOD1))
+
+print("===== LARGE =====")
+plot2 <- ggplot(
+  data = f.mode.pooled,
+  aes(x = NPP, y = Large, color = Location, fill = Location))+
+  geom_smooth(
+    data = subset(f.mode.pooled, Location != "PAP"),
+    method = "glm", method.args = list(family = quasibinomial()),
+    se = TRUE, alpha = 0.2, color = "black", fill = "black")+
+  geom_point(
+    size = 3, shape = 21, color = "black")+
+  facet_wrap(~ Strata, nrow = 3)+
+  ylim(0,1)+
+  ggtitle("Large")
+MOD2 <- glm(Large ~ Depth + NPP,
+         data = f.mode.pooled,
+         family = quasibinomial())
+print("----- SUMMARY -----")
+summary(MOD2)
+print("----- ANOVA -----")
+anova(MOD2)
+# plot(allEffects(MOD2))
+
+print("===== SMALL =====")
+plot3 <- ggplot(
+  data = f.mode.pooled,
+  aes(x = NPP, y = Small, color = Location, fill = Location))+
+  geom_smooth(
+    data = subset(f.mode.pooled, Location != "PAP"),
+    method = "glm", method.args = list(family = quasibinomial()),
+    se = TRUE, alpha = 0.2, color = "black", fill = "black")+
+  geom_point(
+    size = 3, shape = 21, color = "black")+
+  facet_wrap(~ Strata, nrow = 3)+
+  ylim(0,1)+
+  ggtitle("Small")
+MOD3 <- glm(Small ~ Depth + NPP,
+         data = f.mode.pooled,
+         family = quasibinomial())
+print("----- SUMMARY -----")
+summary(MOD3)
+print("----- ANOVA -----")
+anova(MOD3)
+# plot(allEffects(MOD3))
+
+ggarrange(
+  plot1, plot2, plot3,
+  nrow = 1, common.legend = TRUE, legend = "bottom"
+)
+```
+
+Looking at the data this way we can see that the relationship with NPP is only strong within certain depth strata. Let's continue on to examine other predictors.
+
+## Export {-}
+
+Next we will look at particle export at the base of the euphotic zone. We define the base of the EZ here as the depth at which chl is 1% of its maximum. Export is estimated from Th-234 disequillibrium.
+
+```{r incorportating-Export-data}
+locs <- unique(f.mode$Location)
+f.mode$Export <- as.numeric(NA)
+for (i in locs) {
+  f.mode$Export[which(f.mode$Location == i)] <- 
+    as.numeric(data.romero$fluxC.PPZ.avg[which(data.romero$Site == i)])
+}
+locs <- unique(f.mode.pooled$Location)
+f.mode.pooled$Export <- as.numeric(NA)
+for (i in locs) {
+  f.mode.pooled$Export[which(f.mode.pooled$Location == i)] <- 
+    as.numeric(data.romero$fluxC.PPZ.avg[which(data.romero$Site == i)])
+}
+```
+
+At this point we've established that location is an important secondary predictor to include. We will choose to implment depth strata as a discrete secondary predictor in regressions going forward.
+
+```{r DepthStrata-Export, fig.width=8, fig.height=6, warning=FALSE}
+
+f.mode$Strata <- factor("EZ", 
+                        levels = c("EZ","MPZ upper","MPZ lower","Bathyl"))
+f.mode$Strata[which(f.mode$Depth > 100)] <- "MPZ upper"
+f.mode$Strata[which(f.mode$Depth > 700)] <- "MPZ lower"
+# f.mode$Strata[which(f.mode$Depth > 1000)] <- "Bathyl"
+f.mode.pooled$Strata <- factor("EZ", 
+                        levels = c("EZ","MPZ upper","MPZ lower","Bathyl"))
+f.mode.pooled$Strata[which(f.mode.pooled$Depth > 100)] <- "MPZ upper"
+f.mode.pooled$Strata[which(f.mode.pooled$Depth > 700)] <- "MPZ lower"
+# f.mode.pooled$Strata[which(f.mode.pooled$Depth > 1000)] <- "Bathyl"
+
+print("===== SURFACE =====")
+
+plot1 <- ggplot(
+  data = f.mode.pooled,
+  aes(x = Export, y = Surface, color = Location, fill = Location))+
+  geom_smooth(
+    method = "glm", method.args = list(family = quasibinomial()),
+    se = TRUE, alpha = 0.2, color = "black", fill = "black")+
+  geom_point(
+    size = 3, shape = 21, color = "black")+
+  facet_wrap(~ Strata, nrow = 3)+
+  ylim(0,1)+
+  ggtitle("Surface")
+MOD1 <- glm(Surface ~ Depth + Export,
+         data = f.mode,
+         family = quasibinomial())
+print("----- SUMMARY -----")
+summary(MOD1)
+print("----- ANOVA -----")
+anova(MOD1)
+# plot(allEffects(MOD1))
+
+print("===== LARGE =====")
+plot2 <- ggplot(
+  data = f.mode.pooled,
+  aes(x = Export, y = Large, color = Location, fill = Location))+
+  geom_smooth(
+    method = "glm", method.args = list(family = quasibinomial()),
+    se = TRUE, alpha = 0.2, color = "black", fill = "black")+
+  geom_point(
+    size = 3, shape = 21, color = "black")+
+  facet_wrap(~ Strata, nrow = 3)+
+  ylim(0,1)+
+  ggtitle("Large")
+MOD2 <- glm(Large ~ Depth + Export,
+         data = f.mode,
+         family = quasibinomial())
+print("----- SUMMARY -----")
+summary(MOD2)
+print("----- ANOVA -----")
+anova(MOD2)
+# plot(allEffects(MOD2))
+
+print("===== SMALL =====")
+plot3 <- ggplot(
+  data = f.mode.pooled,
+  aes(x = Export, y = Small, color = Location, fill = Location))+
+  geom_smooth(
+    method = "glm", method.args = list(family = quasibinomial()),
+    se = TRUE, alpha = 0.2, color = "black", fill = "black")+
+  geom_point(
+    size = 3, shape = 21, color = "black")+
+  facet_wrap(~ Strata, nrow = 3)+
+  ylim(0,1)+
+  ggtitle("Small")
+MOD3 <- glm(Small ~ Depth + Export,
+         data = f.mode,
+         family = quasibinomial())
+print("----- SUMMARY -----")
+summary(MOD3)
+print("----- ANOVA -----")
+anova(MOD3)
+# plot(allEffects(MOD3))
+
+ggarrange(
+  plot1, plot2, plot3,
+  nrow = 1, common.legend = TRUE, legend = "bottom"
+)
+```
+
+While anova does not identify C export flux as a significant predictor of f(surface) (p = `r anova(MOD1)[3,6]`), this is because a relationship is only observed in bathyl samples. Let's re-run this for bathyl samples alone.
+
+```{r bathyl-Export, fig.width=8, fig.height=3, warning=FALSE}
+
+print("===== SURFACE =====")
+
+plot1 <- ggplot(
+  data = subset(f.mode, Strata == "MPZ lower"),
+  aes(x = Export, y = Surface, color = Location, fill = Location, group = Strata))+
+  geom_smooth(
+    method = "glm", method.args = list(family = quasibinomial()),
+    se = TRUE, alpha = 0.2, color = "black", fill = "black")+
+  geom_point(
+    size = 3, shape = 21, color = "black")+
+  facet_wrap(~ Strata, nrow = 2)+
+  ylim(0,1)+
+  ggtitle("Surface")
+MOD1 <- glm(Surface ~ Export,
+         data = subset(f.mode, Strata == "MPZ lower"),
+         family = quasibinomial())
+print("----- SUMMARY -----")
+summary(MOD1)
+print("----- ANOVA -----")
+anova(MOD1)
+# plot(allEffects(MOD1))
+
+print("===== LARGE =====")
+plot2 <- ggplot(
+  data = subset(f.mode, Strata == "MPZ lower"),
+  aes(x = Export, y = Large, color = Location, fill = Location, group = Strata))+
+  geom_smooth(
+    method = "glm", method.args = list(family = quasibinomial()),
+    se = TRUE, alpha = 0.2, color = "black", fill = "black")+
+  geom_point(
+    size = 3, shape = 21, color = "black")+
+  facet_wrap(~ Strata, nrow = 2)+
+  ylim(0,1)+
+  ggtitle("Large")
+MOD2 <- glm(Large ~ Export,
+         data = subset(f.mode, Strata == "MPZ lower"),
+         family = quasibinomial())
+print("----- SUMMARY -----")
+summary(MOD2)
+print("----- ANOVA -----")
+anova(MOD2)
+# plot(allEffects(MOD2))
+
+print("===== SMALL =====")
+plot3 <- ggplot(
+  data = subset(f.mode, Strata == "MPZ lower"),
+  aes(x = Export, y = Small, color = Location, fill = Location, group = Strata))+
+  geom_smooth(
+    method = "glm", method.args = list(family = quasibinomial()),
+    se = TRUE, alpha = 0.2, color = "black", fill = "black")+
+  geom_point(
+    size = 3, shape = 21, color = "black")+
+  facet_wrap(~ Strata, nrow = 2)+
+  ylim(0,1)+
+  ggtitle("Small")
+MOD3 <- glm(Small ~ Export,
+         data = subset(f.mode, Strata == "MPZ lower"),
+         family = quasibinomial())
+print("----- SUMMARY -----")
+summary(MOD3)
+print("----- ANOVA -----")
+anova(MOD3)
+# plot(allEffects(MOD3))
+
+ggarrange(
+  plot1, plot2, plot3,
+  nrow = 1, common.legend = TRUE, legend = "bottom"
+)
+```
+
+Just looking at bathyl samples, anova now indicates a significant relationship between f(surface) and export. Yet we do note a pattern across all three sources, where surface particles are important when flux is high, large when flux is intermediate, and small when flux is low. This is essentially an extension of the principal finding of Romero-romero et al. (2020).
+
+## Export Ratio {-}
+
+Before we move on to look at DVM biomass, we'll quickly look at the export ratio. This is just export flux / NPP.
+
+```{r incorportating-ExportRatio-data}
+locs <- unique(f.mode$Location)
+f.mode$ExportRatio <- f.mode$Export / f.mode$NPP
+
+locs <- unique(f.mode.pooled$Location)
+f.mode.pooled$ExportRatio <- f.mode.pooled$Export / f.mode.pooled$NPP
+```
+
+
+```{r DepthStrata-ExportRatio, fig.width=8, fig.height=6, warning=FALSE}
+
+f.mode$Strata <- factor("EZ", 
+                        levels = c("EZ","MPZ upper","MPZ lower","Bathyl"))
+f.mode$Strata[which(f.mode$Depth > 100)] <- "MPZ upper"
+f.mode$Strata[which(f.mode$Depth > 700)] <- "MPZ lower"
+# f.mode$Strata[which(f.mode$Depth > 1000)] <- "Bathyl"
+
+f.mode.pooled$Strata <- factor("EZ", 
+                        levels = c("EZ","MPZ upper","MPZ lower","Bathyl"))
+f.mode.pooled$Strata[which(f.mode.pooled$Depth > 100)] <- "MPZ upper"
+f.mode.pooled$Strata[which(f.mode.pooled$Depth > 700)] <- "MPZ lower"
+# f.mode.pooled$Strata[which(f.mode.pooled$Depth > 1000)] <- "Bathyl"
+
+print("===== SURFACE =====")
+
+plot1 <- ggplot(
+  data = f.mode.pooled,
+  aes(x = ExportRatio, y = Surface, color = Location, fill = Location))+
+  geom_smooth(
+    method = "glm", method.args = list(family = quasibinomial()),
+    se = TRUE, alpha = 0.2, color = "black", fill = "black")+
+  geom_point(
+    size = 3, shape = 21, color = "black")+
+  facet_wrap(~ Strata, nrow = 3)+
+  ylim(0,1)+
+  ggtitle("Surface")
+MOD1 <- glm(Surface ~ Depth + ExportRatio,
+         data = f.mode,
+         family = quasibinomial())
+print("----- SUMMARY -----")
+summary(MOD1)
+print("----- ANOVA -----")
+anova(MOD1)
+# plot(allEffects(MOD1))
+
+print("===== LARGE =====")
+plot2 <- ggplot(
+  data = f.mode.pooled,
+  aes(x = ExportRatio, y = Large, color = Location, fill = Location))+
+  geom_smooth(
+    method = "glm", method.args = list(family = quasibinomial()),
+    se = TRUE, alpha = 0.2, color = "black", fill = "black")+
+  geom_point(
+    size = 3, shape = 21, color = "black")+
+  facet_wrap(~ Strata, nrow = 3)+
+  ylim(0,1)+
+  ggtitle("Large")
+MOD2 <- glm(Large ~ Depth + ExportRatio,
+         data = f.mode,
+         family = quasibinomial())
+print("----- SUMMARY -----")
+summary(MOD2)
+print("----- ANOVA -----")
+anova(MOD2)
+# plot(allEffects(MOD2))
+
+print("===== SMALL =====")
+plot3 <- ggplot(
+  data = f.mode.pooled,
+  aes(x = ExportRatio, y = Small, color = Location, fill = Location))+
+  geom_smooth(
+    method = "glm", method.args = list(family = quasibinomial()),
+    se = TRUE, alpha = 0.2, color = "black", fill = "black")+
+  geom_point(
+    size = 3, shape = 21, color = "black")+
+  facet_wrap(~ Strata, nrow = 3)+
+  ylim(0,1)+
+  ggtitle("Small")
+MOD3 <- glm(Small ~ Depth + ExportRatio,
+         data = f.mode,
+         family = quasibinomial())
+print("----- SUMMARY -----")
+summary(MOD3)
+print("----- ANOVA -----")
+anova(MOD3)
+# plot(allEffects(MOD3))
+
+ggarrange(
+  plot1, plot2, plot3,
+  nrow = 1, common.legend = TRUE, legend = "bottom"
+)
+```
+
+Export ratio turns out to be a pretty decent predictor of f(surface) (p = `r anova(MOD1)[3,6]`) and f(large) (p = `r anova(MOD2)[3,6]`), but not of f(small) (p = `r anova(MOD3)[3,6]`). 
+
+## Diel Vertical Migrator Biomass {-}
+
+The last predictor we will consider is DVM biomass. This is a depth specific metric, like carbon export. Again, we will use a dynamic depth cutoff defined by the base of the PPZ.
+
+```{r incorportating-DVM-data}
+locs <- unique(f.mode$Location)
+f.mode$DVM <- NA
+for (i in locs) {
+  f.mode$DVM[which(f.mode$Location == i)] <- 
+    as.numeric(data.romero$migbio.PPZ[which(data.romero$Site == i)])
+}
+f.mode$DVMProp <- NA
+for (i in locs) {
+  f.mode$DVMProp[which(f.mode$Location == i)] <- 
+    as.numeric(data.romero$prop.migbio.200[which(data.romero$Site == i)])
+}
+locs <- unique(f.mode.pooled$Location)
+f.mode.pooled$DVM <- NA
+for (i in locs) {
+  f.mode.pooled$DVM[which(f.mode.pooled$Location == i)] <- 
+    as.numeric(data.romero$migbio.PPZ[which(data.romero$Site == i)])
+}
+f.mode.pooled$DVMProp <- NA
+for (i in locs) {
+  f.mode.pooled$DVMProp[which(f.mode.pooled$Location == i)] <- 
+    as.numeric(data.romero$prop.migbio.200[which(data.romero$Site == i)])
+}
+```
+
+
+```{r DepthStrata-DVM, fig.width=8, fig.height=6, warning=FALSE}
+
+f.mode$Strata <- factor("EZ", 
+                        levels = c("EZ","MPZ upper","MPZ lower","Bathyl"))
+f.mode$Strata[which(f.mode$Depth > 100)] <- "MPZ upper"
+f.mode$Strata[which(f.mode$Depth > 700)] <- "MPZ lower"
+# f.mode$Strata[which(f.mode$Depth > 1000)] <- "Bathyl"
+
+f.mode.pooled$Strata <- factor("EZ", 
+                        levels = c("EZ","MPZ upper","MPZ lower","Bathyl"))
+f.mode.pooled$Strata[which(f.mode.pooled$Depth > 100)] <- "MPZ upper"
+f.mode.pooled$Strata[which(f.mode.pooled$Depth > 700)] <- "MPZ lower"
+# f.mode.pooled$Strata[which(f.mode.pooled$Depth > 1000)] <- "Bathyl"
+
+print("===== SURFACE =====")
+
+plot1 <- ggplot(
+  data = f.mode.pooled,
+  aes(x = DVM, y = Surface, color = Location, fill = Location))+
+  geom_smooth(
+    data = subset(f.mode.pooled, Location != "PAP"),
+    method = "glm", method.args = list(family = quasibinomial()),
+    se = TRUE, alpha = 0.2, color = "black", fill = "black")+
+  geom_point(
+    size = 3, shape = 21, color = "black")+
+  facet_wrap(~ Strata, nrow = 3)+
+  ylim(0,1)+
+  ggtitle("Surface")
+MOD1 <- glm(Surface ~ Depth + DVM,
+         data = f.mode.pooled,
+         family = quasibinomial())
+print("----- SUMMARY -----")
+summary(MOD1)
+print("----- ANOVA -----")
+anova(MOD1)
+# plot(allEffects(MOD1))
+
+print("===== LARGE =====")
+plot2 <- ggplot(
+  data = f.mode.pooled,
+  aes(x = DVM, y = Large, color = Location, fill = Location))+
+  geom_smooth(
+    data = subset(f.mode.pooled, Location != "PAP"),
+    method = "glm", method.args = list(family = quasibinomial()),
+    se = TRUE, alpha = 0.2, color = "black", fill = "black")+
+  geom_point(
+    size = 3, shape = 21, color = "black")+
+  facet_wrap(~ Strata, nrow = 3)+
+  ylim(0,1)+
+  ggtitle("Large")
+MOD2 <- glm(Large ~ Depth + DVM,
+         data = f.mode.pooled,
+         family = quasibinomial())
+print("----- SUMMARY -----")
+summary(MOD2)
+print("----- ANOVA -----")
+anova(MOD2)
+# plot(allEffects(MOD2))
+
+print("===== SMALL =====")
+plot3 <- ggplot(
+  data = f.mode.pooled,
+  aes(x = DVM, y = Small, color = Location, fill = Location))+
+  geom_smooth(
+    data = subset(f.mode.pooled, Location != "PAP"),
+    method = "glm", method.args = list(family = quasibinomial()),
+    se = TRUE, alpha = 0.2, color = "black", fill = "black")+
+  geom_point(
+    size = 3, shape = 21, color = "black")+
+  facet_wrap(~ Strata, nrow = 3)+
+  ylim(0,1)+
+  ggtitle("Small")
+MOD3 <- glm(Small ~ Depth + DVM,
+         data = f.mode.pooled,
+         family = quasibinomial())
+print("----- SUMMARY -----")
+summary(MOD3)
+print("----- ANOVA -----")
+anova(MOD3)
+# plot(allEffects(MOD3))
+
+ggarrange(
+  plot1, plot2, plot3,
+  nrow = 1, common.legend = TRUE, legend = "bottom"
+)
+```
+
+DVM biomass is a signifcant predictor of f(surface) (p = `r anova(MOD1)[3,6]`) and f(small) (p = `r anova(MOD3)[3,6]`), but not of f(large) (p = `r anova(MOD2)[3,6]`). 
+
+## Summary {-}
+
+Let's first review at some basic relationships with NPP.
+
+```{r NPP-relationships, dpi=300, fig.width=5, fig.height=12, warning=FALSE}
+ggarrange(
+
+ggplot(
+  data = subset(f.mode.pooled, Strata == "EZ"),
+  aes(x = NPP, y = Export, color = Location, fill = Location, group = Strata))+
+  geom_smooth(
+    method = "lm", formula = y ~ poly(x, 2),
+    se = TRUE, color = "black", fill="grey")+
+  geom_point(
+    size = 3, shape = 21, color = "black")+
+  coord_cartesian(xlim = c(0,NA), ylim = c(0,NA))+
+  theme(axis.title.x = element_blank())+
+  xlim(0,80) + ylab(expression("C Export (mmol C/m"^2*"/day)"))+
+  scale_fill_discrete(
+    labels = c("5° N","8° N","ALOHA S","ALOHA W","Station Papa","N Atlantic")),
+
+ggplot(
+  data = subset(f.mode.pooled, Strata == "EZ"),
+  aes(x = NPP, y = DVM, color = Location, fill = Location, group = Strata))+
+  geom_smooth(
+    method = "lm", formula = y ~ x,
+    se = TRUE, color = "black", fill="grey")+
+  geom_point(
+    size = 3, shape = 21, color = "black")+
+  coord_cartesian(xlim = c(0,NA), ylim = c(0,NA))+
+  theme(axis.title.x = element_blank())+
+  xlim(0,80) + ylab(expression("DVM Biomass (mg/m"^2*")")),
+
+ggplot(
+  data = subset(trophic.mode.mean, Depth > 200 & Depth < 1000),
+  aes(x = NPP, y = baseTP, color = Location, fill = Location))+
+  geom_smooth(
+    data = subset(trophic.mode.mean),
+    method = "lm", formula = y ~ poly(x, 2),
+    se = TRUE, color = "black", fill="grey")+
+  geom_point(
+    size = 3, shape = 21, color = "black")+
+  theme(axis.title.x = element_blank())+
+  ylim(1,2.5) + xlim(0,80) + ylab("Base TP"),
+
+ggplot(
+  data = subset(trophic.mode.mean, Depth > 200 & Depth < 1000),
+  aes(x = NPP, y = FWL, color = Location, fill = Location))+
+  # geom_line(
+  #   data = trophic.HDI95.long,
+  #   aes(x = value, y = Depth, color = Size, group = interaction(Depth, Size)),
+  #   alpha = 0.5, size = 1,
+  #   position = position_dodgev(height = 100))+
+  # geom_line(
+  #   data = trophic.HDI90.long,
+  #   aes(x = value, y = Depth, color = Size, group = interaction(Depth, Size)),
+  #   alpha = 0.7, size = 1.5,
+  #   position = position_dodgev(height = 100))+
+  # geom_line(
+  #   data = trophic.HDI75.long,
+  #   aes(x = value, y = Depth, color = Size, group = interaction(Depth, Size)),
+  #   alpha = 1, size = 2,
+  #   position = position_dodgev(height = 100))+
+  # geom_line(
+  #   data = trophic.HDI50.long,
+  #   aes(x = value, y = Depth, color = Size, group = interaction(Depth, Size)),
+  #   alpha = 1, size = 3,
+  #   position = position_dodgev(height = 100))+
+  geom_smooth(
+    data = subset(trophic.mode.mean),
+    method = "lm", formula = y ~ poly(x, 2),
+    se = TRUE, color = "black", fill="grey", )+
+  geom_point(
+    size = 3, shape = 21, color = "black")+
+  theme(axis.title.x = element_blank())+
+  ylim(1,2.5) + xlim(0,80) + ylab("Food Web Length"),
+
+ggplot(
+  data = subset(f.mode.pooled, Depth > 200 & Depth < 1000),
+  aes(x = NPP, y = Surface, color = Location, fill = Location))+
+  geom_smooth(
+    method = "lm", formula = y ~ poly(x, 2),
+    se = TRUE, color = "black", fill="grey", )+
+  geom_point(
+    size = 3, shape = 21, color = "black")+
+  ylim(0,1) + xlim(0,80) + 
+  ylab("f(surface)")+
+  xlab(expression("NPP (mmol C/"*m^2*"/day)"))+
+  scale_y_continuous(
+    limits = c(0,1),
+    breaks = c(0,0.2,0.4,0.6,0.8,1)),
+
+nrow = 5,
+heights = c(1,1,1,1,1.2),
+legend = "right",
+common.legend = TRUE
+)
+
+ggarrange(
+
+ggplot(
+  data = subset(f.mode.pooled, Strata == "EZ"),
+  aes(x = NPP, y = Export, color = Location, fill = Location, group = Strata))+
+  # geom_smooth(
+  #   method = "lm", formula = y ~ poly(x, 2),
+  #   se = TRUE, color = "black", fill="grey")+
+  geom_point(
+    size = 3, shape = 21, color = "black")+
+  coord_cartesian(xlim = c(0,NA), ylim = c(0,NA))+
+  theme(axis.title.x = element_blank())+
+  xlim(0,80) + ylab(expression("C Export (mmol C/m"^2*"/day)"))+
+  scale_fill_discrete(
+    labels = c("5° N","8° N","ALOHA S","ALOHA W","Station Papa","N Atlantic")),
+
+ggplot(
+  data = subset(f.mode.pooled, Strata == "EZ"),
+  aes(x = NPP, y = DVM, color = Location, fill = Location, group = Strata))+
+  # geom_smooth(
+  #   method = "lm", formula = y ~ x,
+  #   se = TRUE, color = "black", fill="grey")+
+  geom_point(
+    size = 3, shape = 21, color = "black")+
+  coord_cartesian(xlim = c(0,NA), ylim = c(0,NA))+
+  theme(axis.title.x = element_blank())+
+  xlim(0,80) + ylab(expression("DVM Biomass (mg/m"^2*")")),
+
+ggplot(
+  data = subset(trophic.mode.mean, Depth > 200 & Depth < 1000),
+  aes(x = NPP, y = baseTP, color = Location, fill = Location))+
+  # geom_smooth(
+  #   data = subset(trophic.mode.mean),
+  #   method = "lm", formula = y ~ poly(x, 2),
+  #   se = TRUE, color = "black", fill="grey")+
+  geom_point(
+    size = 3, shape = 21, color = "black")+
+  theme(axis.title.x = element_blank())+
+  ylim(1,2.5) + xlim(0,80) + ylab("Base TP"),
+
+ggplot(
+  data = subset(trophic.mode.mean, Depth > 200 & Depth < 1000),
+  aes(x = NPP, y = FWL, color = Location, fill = Location))+
+  # geom_line(
+  #   data = trophic.HDI95.long,
+  #   aes(x = value, y = Depth, color = Size, group = interaction(Depth, Size)),
+  #   alpha = 0.5, size = 1,
+  #   position = position_dodgev(height = 100))+
+  # geom_line(
+  #   data = trophic.HDI90.long,
+  #   aes(x = value, y = Depth, color = Size, group = interaction(Depth, Size)),
+  #   alpha = 0.7, size = 1.5,
+  #   position = position_dodgev(height = 100))+
+  # geom_line(
+  #   data = trophic.HDI75.long,
+  #   aes(x = value, y = Depth, color = Size, group = interaction(Depth, Size)),
+  #   alpha = 1, size = 2,
+  #   position = position_dodgev(height = 100))+
+  # geom_line(
+  #   data = trophic.HDI50.long,
+  #   aes(x = value, y = Depth, color = Size, group = interaction(Depth, Size)),
+  #   alpha = 1, size = 3,
+  #   position = position_dodgev(height = 100))+
+  # geom_smooth(
+  #   data = subset(trophic.mode.mean),
+  #   method = "lm", formula = y ~ poly(x, 2),
+  #   se = TRUE, color = "black", fill="grey", )+
+  geom_point(
+    size = 3, shape = 21, color = "black")+
+  theme(axis.title.x = element_blank())+
+  ylim(1,2.5) + xlim(0,80) + ylab("Food Web Length"),
+
+ggplot(
+  data = subset(f.mode.pooled, Depth > 200 & Depth < 1000),
+  aes(x = NPP, y = Surface, color = Location, fill = Location))+
+  # geom_smooth(
+  #   method = "lm", formula = y ~ poly(x, 2),
+  #   se = TRUE, color = "black", fill="grey", )+
+  geom_point(
+    size = 3, shape = 21, color = "black")+
+  ylim(0,1) + xlim(0,80) + 
+  ylab("f(surface)")+
+  xlab(expression("NPP (mmol C/"*m^2*"/day)"))+
+  scale_y_continuous(
+    limits = c(0,1),
+    breaks = c(0,0.2,0.4,0.6,0.8,1)),
+
+nrow = 5,
+heights = c(1,1,1,1,1.2),
+legend = "right",
+common.legend = TRUE
+)
+
+#### C Export vs NPP ####
+noquote("C Export vs NPP")
+LM <- lm(
+  data = subset(f.mode.pooled, Strata == "EZ"),
+  formula = Export ~ poly(NPP, degree = 2)
+)
+summary(LM)
+anova(LM)
+
+#### DVM vs NPP ####
+noquote("DVM vs NPP")
+LM <- lm(
+  data = subset(f.mode.pooled, Strata == "EZ"),
+  formula = DVM ~ NPP
+)
+summary(LM)
+anova(LM)
+
+#### baseTP vs NPP ####
+noquote("Base TP vs NPP")
+LM <- lm(
+  data = subset(trophic.mode.mean, Depth > 200 & Depth < 1000),
+  formula = baseTP ~ poly(NPP, degree = 2)
+)
+summary(LM)
+anova(LM)
+
+#### FWL vs NPP ####
+noquote("FWL vs NPP")
+LM <- lm(
+  data = subset(trophic.mode.mean, Depth > 200 & Depth < 1000),
+  formula = FWL ~ poly(NPP, degree = 2)
+)
+summary(LM)
+anova(LM)
+
+#### f(surface) vs NPP ####
+noquote("f(surface) vs NPP")
+LM <- lm(
+  data = subset(f.mode.pooled, Depth > 200 & Depth < 1000),
+  formula = Surface ~ poly(NPP, degree = 2)
+)
+summary(LM)
+anova(LM)
+```
+
+```{r NPP-EXPORToverDVM, dpi=300, fig.width=5, fig.height=3, warning=FALSE}
+
+ggplot(
+  data = subset(f.mode.pooled, Strata == "EZ" & Location != "8 N"),
+  aes(x = NPP, y = DVM/(Export*12), color = Location, fill = Location, group = Strata))+
+  geom_smooth(
+    method = "lm", formula = y ~ poly(x, 2),
+    se = TRUE, color = "black", fill="grey")+
+  geom_point(
+    size = 3, shape = 21, color = "black")+
+  coord_cartesian(xlim = c(0,NA), ylim = c(0,NA))+
+  # theme(axis.title.x = element_blank())+
+  xlim(0,80) + ylab(expression("DVM/C Export"))+
+  scale_fill_discrete(
+    labels = c("5° N","ALOHA S","ALOHA W","Station Papa","N Atlantic"))
+
+ggplot(
+  data = subset(f.mode.pooled, Strata == "EZ" & Location != "8 N"),
+  aes(x = NPP, y = DVMProp/(Export*12), color = Location, fill = Location, group = Strata))+
+  geom_smooth(
+    method = "lm", formula = y ~ poly(x, 2),
+    se = TRUE, color = "black", fill="grey")+
+  geom_point(
+    size = 3, shape = 21, color = "black")+
+  coord_cartesian(xlim = c(0,NA), ylim = c(0,NA))+
+  # theme(axis.title.x = element_blank())+
+  xlim(0,80) + ylab(expression("proportion DVM/C Export (mg C)"))+
+  scale_fill_discrete(
+    labels = c("5° N","ALOHA S","ALOHA W","Station Papa","N Atlantic"))
+
+ggplot(
+  data = subset(f.mode.pooled, Strata == "EZ" & Location != "8 N"),
+  aes(x = DVM/(Export*12), y = Surface , color = Location, fill = Location, group = Strata))+
+  geom_smooth(
+    method = "lm", formula = y ~ x,
+    se = TRUE, color = "black", fill="grey")+
+  geom_point(
+    size = 3, shape = 21, color = "black")+
+  coord_cartesian(xlim = c(0,NA), ylim = c(0,NA))+
+  # theme(axis.title.x = element_blank())+
+  xlab(expression("DVM/C Export"))+
+  scale_fill_discrete(
+    labels = c("5° N","ALOHA S","ALOHA W","Station Papa","N Atlantic"))
+
+```
+
+```{r NPP-relationships-allDepths, dpi=300, fig.width=5, fig.height=3, warning=FALSE}
+
+
+
+ggplot(
+  data = subset(trophic.mode.mean, Depth > 200),
+  aes(x = NPP, y = FWL, color = Location, fill = Location))+
+  geom_smooth(
+    method = "lm", formula = y ~ poly(x, 2),
+    se = TRUE, color = "black", fill="grey", )+
+  geom_point(
+    size = 3, shape = 21, color = "black")+
+  geom_point(
+    data = subset(trophic.mode.mean, Depth > 1000),
+    size = 3, shape = 1, color = "purple", stroke = 2)+
+  theme(axis.title.x = element_blank())+
+  ylim(1,2.7) + xlim(0,80) + ylab("Food Web Length")
+
+#### FWL vs NPP ####
+noquote("FWL vs NPP")
+LM <- lm(
+  data = subset(trophic.mode.mean, Depth > 200),
+  formula = FWL ~ poly(NPP, degree = 2)
+)
+summary(LM)
+anova(LM)
+
+ggplot(
+  data = subset(f.mode.pooled, Depth > 200),
+  aes(x = NPP, y = Surface, fill = Location))+
+  geom_smooth(
+    method = "lm", formula = y ~ poly(x, 2),
+    se = TRUE, color = "black", fill="grey", )+
+  geom_point(
+    size = 3, shape = 21, color = "black")+
+  geom_point(
+    data = subset(f.mode.pooled, Depth > 1000),
+    size = 3, shape = 1, color = "purple", stroke = 2)+
+  ylim(0,1) + xlim(0,80) + 
+  ylab("f(surface)")+ 
+  xlab(expression("NPP (mmol C/"*m^2*"/day)"))+
+  scale_y_continuous(
+    limits = c(0,1),
+    breaks = c(0,0.2,0.4,0.6,0.8,1))
+
+#### f(surface) vs NPP ####
+noquote("FWL vs NPP")
+LM <- lm(
+  data = subset(f.mode.pooled, Depth > 200),
+  formula = Surface ~ poly(NPP, degree = 2)
+)
+summary(LM)
+anova(LM)
+
+```
+
+Let's capture the mean values at each site in a table.
+
+```{r NPP-relationships-table}
+summary <- 
+  cbind(
+    aggregate(
+      x = cbind(NPP, DVM, Export, Surface) ~ Location,
+      data = subset(f.mode.pooled, Depth > 200 & Depth < 1000), 
+      FUN = "mean"
+    ),
+    aggregate(
+      x = cbind(FWL, baseTP) ~ Location,
+      data = subset(trophic.mode, Depth > 200 & Depth < 1000), 
+      FUN = "mean"
+    )[-1]
+  )
+summary <-
+  # t(
+    cbind(
+      summary[1:3],
+      round(summary[4:5],2),
+      round(summary[6:7],1)
+    # )
+  )
+kable(summary)
+
+```
+
+
+Depth is the most significant factor affecting contributions from all organic matter sources to the zooplankton food web at any given location. This is intuitive and makes sense. Surface POM becomes less important in general with depth, while sinking POM becomes increasingly important with depth. The nature of the task, then, becomes to figure out what other variable(s) predict the nature of this depth dependence.
+
+```{r summary-depth, dpi = 300, fig.width=8, fig.height=3}
+print("===== SURFACE =====")
+
+plot1 <- ggplot(
+  data = f.mode.pooled,
+  aes(y = Depth, x = Surface, color = Location, fill = Location, shape = Location))+
+  geom_smooth(span = 0.5,
+    # method = "glm", method.args = list(family = quasibinomial()),
+    # method = "lm", formula = y ~ poly(x, 2),
+    se = FALSE, alpha = 0.1, orientation = "y")+
+  geom_point(
+    size = 3, color = "black")+
+  scale_shape_manual(values = c(21,22,23,24,21,22),
+                     labels = c("5° N","8° N","ALOHA S","ALOHA W","Station Papa","N Atlantic"))+
+  scale_y_reverse() + 
+  scale_x_continuous(position = "top",
+                     breaks = c(0,0.5,1),
+                     limits = c(0,1))+
+  scale_color_discrete(
+    labels = c("5° N","8° N","ALOHA S","ALOHA W","Station Papa","N Atlantic"))+
+  scale_fill_discrete(
+    labels = c("5° N","8° N","ALOHA S","ALOHA W","Station Papa","N Atlantic"))
+  # ggtitle("Surface")
+
+print("===== LARGE =====")
+plot2 <- ggplot(
+  data = f.mode.pooled,
+  aes(y = Depth, x = Large, color = Location, fill = Location, shape = Location))+
+  geom_smooth(span = 0.5,
+    # method = "glm", method.args = list(family = quasibinomial()),
+    # method = "lm", formula = y ~ poly(x, 2),
+    se = FALSE, alpha = 0.1, orientation = "y")+
+  geom_point(
+    size = 3, color = "black")+
+  scale_shape_manual(values = c(21,22,23,24,21,22))+
+  scale_y_reverse() +
+  scale_x_continuous(position = "top",
+                     breaks = c(0,0.5,1),
+                     limits = c(0,1)) + 
+  xlab("Deep Large")
+  # ggtitle("Large")
+
+print("===== SMALL =====")
+plot3 <- ggplot(
+  data = f.mode.pooled,
+  aes(y = Depth, x = Small, color = Location, fill = Location, shape = Location))+
+  geom_smooth(span = 0.5,
+    # method = "glm", method.args = list(family = quasibinomial()),
+    # method = "lm", formula = y ~ poly(x, 2),
+    se = FALSE, alpha = 0.1, orientation = "y")+
+  geom_point(
+    size = 3, color = "black")+
+  scale_shape_manual(values = c(21,22,23,24,21,22))+
+  scale_y_reverse() +
+  scale_x_continuous(position = "top",
+                     breaks = c(0,0.5,1),
+                     limits = c(0,1)) + 
+  xlab("Deep Small")
+  # ggtitle("Small")
+
+ggarrange(
+  plot1, 
+  plot2 + theme(axis.title.y = element_blank()), 
+  plot3 + theme(axis.title.y = element_blank()),
+  nrow = 1, common.legend = TRUE, legend = "right"
+)
+```
+
+In the euphotic zone, export ratio appears to describe relevant organic matter sources well. Station Papa appears to have an anomalously high export ratio (flux:NPP) compared to other locations in the North Pacific, meaning a given amount of NPP results in greater flux into the mesopelagic zone.
+
+```{r summary-ExportRatio, fig.width=10, fig.asp=0.3, warning=FALSE}
+
+f.mode.pooled$Strata <- factor("EZ", 
+                        levels = c("EZ","MPZ upper","MPZ lower","Bathyl"))
+f.mode.pooled$Strata[which(f.mode.pooled$Depth > 100)] <- "MPZ upper"
+f.mode.pooled$Strata[which(f.mode.pooled$Depth > 700)] <- "MPZ lower"
+# f.mode.pooled$Strata[which(f.mode.pooled$Depth > 1000)] <- "Bathyl"
+# 
+print("===== SURFACE =====")
+
+plot1 <- ggplot(
+  data = subset(f.mode.pooled, Strata == "EZ"),
+  aes(x = ExportRatio, y = Surface, color = Location, fill = Location, group = Strata))+
+  geom_smooth(
+    method = "glm", method.args = list(family = quasibinomial()),
+    se = TRUE, alpha = 0.2)+
+  geom_point(
+    size = 3, shape = 21, color = "black")+
+  facet_wrap(~ Strata, nrow = 2)+
+  ggtitle("Surface")
+
+print("===== LARGE =====")
+plot2 <- ggplot(
+  data = subset(f.mode.pooled, Strata == "EZ"),
+  aes(x = ExportRatio, y = Large, color = Location, fill = Location, group = Strata))+
+  geom_smooth(
+    method = "glm", method.args = list(family = quasibinomial()),
+    se = TRUE, alpha = 0.2)+
+  geom_point(
+    size = 3, shape = 21, color = "black")+
+  facet_wrap(~ Strata, nrow = 2)+
+  ggtitle("Large")
+
+print("===== SMALL =====")
+plot3 <- ggplot(
+  data = subset(f.mode.pooled, Strata == "EZ"),
+  aes(x = ExportRatio, y = Small, color = Location, fill = Location, group = Strata))+
+  geom_smooth(
+    method = "glm", method.args = list(family = quasibinomial()),
+    se = TRUE, alpha = 0.2)+
+  geom_point(
+    size = 3, shape = 21, color = "black")+
+  facet_wrap(~ Strata, nrow = 2)+
+  ggtitle("Small")
+
+plot4 <- ggplot(
+  data = subset(f.mode.pooled, Strata == "EZ"),
+  aes(x = NPP, y = Export, color = Location, fill = Location, group = Strata))+
+  geom_smooth(method = "lm", se = TRUE, alpha = 0.2)+
+  geom_point(
+    size = 3, shape = 21, color = "black")+
+  coord_cartesian(xlim = c(0,NA), ylim = c(0,NA))+
+  ggtitle("C Export vs NPP")
+
+ggarrange(
+  plot1, plot2, plot3, plot4,
+  nrow = 1, common.legend = TRUE, legend = "bottom"
+)
+```
+
+```{r summary-NPP, fig.width=8, fig.asp=0.4, warning=FALSE}
+
+f.mode.pooled$Strata <- factor("EZ", 
+                        levels = c("EZ","MPZ upper","MPZ lower","Bathyl"))
+f.mode.pooled$Strata[which(f.mode.pooled$Depth > 100)] <- "MPZ upper"
+f.mode.pooled$Strata[which(f.mode.pooled$Depth > 700)] <- "MPZ lower"
+# f.mode.pooled$Strata[which(f.mode.pooled$Depth > 1000)] <- "Bathyl"
+
+print("===== SURFACE =====")
+
+plot1 <- ggplot(
+  data = f.mode.pooled,
+  aes(x = NPP, y = Surface, color = Location, fill = Location, group = Strata))+
+  geom_smooth(
+    method = "glm", method.args = list(family = quasibinomial()),
+    se = TRUE, alpha = 0.2)+
+  geom_point(
+    size = 3, shape = 21, color = "black")+
+  facet_wrap(~ Strata, nrow = 1)+
+  ggtitle("Surface")
+plot1
+
+plot2 <- ggplot(
+  data = f.mode.pooled,
+  aes(x = NPP, y = Small, color = Location, fill = Location, group = Strata))+
+  geom_smooth(
+    method = "glm", method.args = list(family = quasibinomial()),
+    se = TRUE, alpha = 0.2)+
+  geom_point(
+    size = 3, shape = 21, color = "black")+
+  facet_wrap(~ Strata, nrow = 1)+
+  ggtitle("Small")
+plot2
+```
+
+Below the euphotic zone, Vertical migrator biomass is the most significant predictor of f(surface), which should absolutely not be surprising.
+
+```{r summary-DVM, fig.width=8, fig.asp=0.4, warning=FALSE}
+
+f.mode.pooled$Strata <- factor("EZ", 
+                        levels = c("EZ","MPZ upper","MPZ lower","Bathyl"))
+f.mode.pooled$Strata[which(f.mode.pooled$Depth > 100)] <- "MPZ upper"
+f.mode.pooled$Strata[which(f.mode.pooled$Depth > 700)] <- "MPZ lower"
+# f.mode.pooled$Strata[which(f.mode.pooled$Depth > 1000)] <- "Bathyl"
+
+print("===== SURFACE =====")
+
+plot1 <- ggplot(
+  data = f.mode.pooled,
+  aes(x = DVM, y = Surface, color = Location, fill = Location, group = Strata))+
+  geom_smooth(
+    method = "glm", method.args = list(family = quasibinomial()),
+    se = TRUE, alpha = 0.2)+
+  geom_point(
+    size = 3, shape = 21, color = "black")+
+  facet_wrap(~ Strata, nrow = 1)+
+  ggtitle("Surface")
+plot1
+
+plot2 <- ggplot(
+  data = f.mode.pooled,
+  aes(x = DVM, y = Small, color = Location, fill = Location, group = Strata))+
+  geom_smooth(
+    method = "glm", method.args = list(family = quasibinomial()),
+    se = TRUE, alpha = 0.2)+
+  geom_point(
+    size = 3, shape = 21, color = "black")+
+  facet_wrap(~ Strata, nrow = 1)+
+  ggtitle("Small")
+plot2
+```
+
+Let's also check out the proportion of zooplankton doing DVM as a function of NPP.
+
+```{r prop-DVM-vs-NPP, fig.width=5, fig.height=3, warning=FALSE}
+#### f(surface) vs NPP ####
+noquote("f(surface) vs NPP")
+LM <- lm(
+  data = subset(f.mode.pooled, Depth > 200),
+  formula = Surface ~ poly(NPP, degree = 2)
+)
+summary(LM)
+anova(LM)
+
+ggplot(
+  data = subset(f.mode.pooled, Strata == "EZ"),
+  aes(x = NPP, y = DVMProp, color = Location, fill = Location, group = Strata))+
+  geom_smooth(
+    method = "lm", formula = y ~ x,
+    se = TRUE, color = "black", fill="grey")+
+  geom_point(
+    size = 3, shape = 21, color = "black")+
+  coord_cartesian(xlim = c(0,NA), ylim = c(0,NA))+
+  xlab(expression("NPP (mmol C/"*m^2*"/day)"))+
+  xlim(0,80) + ylab("Proportion DVM")
+
+#### proportion DVM vs NPP ####
+noquote("proportion DVM vs NPP")
+LM <- lm(
+  data = subset(f.mode.pooled, Strata == "EZ"),
+  formula = DVMProp ~ NPP
+)
+summary(LM)
+anova(LM)
+```
+
+Export ratio does pretty well predicting f(large) in the mesopelagic, while NPP does best with f(small) in the MPZ.
+
+```{r summary-ExportRatio-NPP, fig.width=8, fig.asp=0.4, warning=FALSE}
+
+f.mode.pooled$Strata <- factor("EZ", 
+                        levels = c("EZ","MPZ upper","MPZ lower","Bathyl"))
+f.mode.pooled$Strata[which(f.mode.pooled$Depth > 100)] <- "MPZ upper"
+f.mode.pooled$Strata[which(f.mode.pooled$Depth > 700)] <- "MPZ lower"
+# f.mode.pooled$Strata[which(f.mode.pooled$Depth > 1000)] <- "Bathyl"
+
+print("===== Surface =====")
+plot1 <- ggplot(
+  data = f.mode.pooled,
+  aes(x = ExportRatio, y = Surface, color = Location, fill = Location, group = Strata))+
+  geom_smooth(
+    method = "glm", method.args = list(family = quasibinomial()),
+    se = TRUE, alpha = 0.2)+
+  geom_point(
+    size = 3, shape = 21, color = "black")+
+  facet_wrap(~ Strata, nrow = 1)+
+  ggtitle("Surface")
+plot1
+
+print("===== LARGE =====")
+plot2 <- ggplot(
+  data = f.mode.pooled,
+  aes(x = ExportRatio, y = Large, color = Location, fill = Location, group = Strata))+
+  geom_smooth(
+    method = "glm", method.args = list(family = quasibinomial()),
+    se = TRUE, alpha = 0.2)+
+  geom_point(
+    size = 3, shape = 21, color = "black")+
+  facet_wrap(~ Strata, nrow = 1)+
+  ggtitle("Large")
+plot2
+
+print("===== SMALL =====")
+plot3 <- ggplot(
+  data = f.mode.pooled,
+  aes(x = NPP, y = Small, color = Location, fill = Location, group = Strata))+
+  geom_smooth(
+    method = "glm", method.args = list(family = quasibinomial()),
+    se = TRUE, alpha = 0.2)+
+  geom_point(
+    size = 3, shape = 21, color = "black")+
+  facet_wrap(~ Strata, nrow = 1)+
+  ggtitle("Small")
+plot3
+```
+
+
+
+# Predictors of DVM biomass? {-}
+
+One interesting question that emerges from this analysis is, to what extent is DVM correlated with other predictors? In other words, do NPP, export or export ratio predict DVM? It's pretty easy to check, so lets fit some quick linear regressions to do this.
+
+```{r predictors-of-DVM, fig.width=8, fig.asp=0.4, warning=FALSE}
+
+plot1 <- ggplot(
+  data = data.romero,
+  aes(y = migbio.PPZ , x = `NPP (best)`, color = Site, fill = Site))+
+  geom_smooth(
+    method = "lm", se = TRUE, color = "black", fill = "grey")+
+  geom_point(
+    size = 3, shape = 21, color = "black")
+plot1
+MOD1 <- lm(migbio.PPZ ~ `NPP (best)`,
+         data = data.romero)
+print("----- SUMMARY -----")
+summary(MOD1)
+print("----- ANOVA -----")
+anova(MOD1)
+
+
+plot1 <- ggplot(
+  data = data.romero,
+  aes(y = migbio.PPZ , x = fluxC.PPZ.avg, color = Site, fill = Site))+
+  geom_smooth(
+    method = "lm", se = TRUE, color = "black", fill = "grey")+
+  geom_point(
+    size = 3, shape = 21, color = "black")
+plot1
+MOD1 <- lm(migbio.PPZ ~ fluxC.PPZ.avg,
+         data = data.romero)
+print("----- SUMMARY -----")
+summary(MOD1)
+print("----- ANOVA -----")
+anova(MOD1)
+
+plot1 <- ggplot(
+  data = data.romero,
+  aes(y = migbio.PPZ , x = fluxC.PPZ.avg/`NPP (best)`, color = Site, fill = Site))+
+  geom_smooth(
+    method = "lm", se = TRUE, color = "black", fill = "grey")+
+  geom_point(
+    size = 3, shape = 21, color = "black")
+plot1
+MOD1 <- lm(migbio.PPZ ~ fluxC.PPZ.avg/`NPP (best)`,
+         data = data.romero)
+print("----- SUMMARY -----")
+summary(MOD1)
+print("----- ANOVA -----")
+anova(MOD1)
+
+plot1 <- ggplot(
+  data = data.romero,
+  aes(y = bio.200.day , x = `NPP (best)`, color = Site, fill = Site))+
+  geom_smooth(
+    method = "lm", se = TRUE, color = "black", fill = "grey")+
+  geom_point(
+    size = 3, shape = 21, color = "black")
+plot1
+MOD1 <- lm(bio.200.day ~ `NPP (best)`,
+         data = data.romero)
+print("----- SUMMARY -----")
+summary(MOD1)
+print("----- ANOVA -----")
+anova(MOD1)
+
+plot1 <- ggplot(
+  data = data.romero,
+  aes(y = bio.200.day , x = fluxC.PPZ.avg, color = Site, fill = Site))+
+  geom_smooth(
+    method = "lm", se = TRUE, color = "black", fill = "grey")+
+  geom_point(
+    size = 3, shape = 21, color = "black")
+plot1
+MOD1 <- lm(bio.200.day ~ fluxC.PPZ.avg,
+         data = data.romero)
+print("----- SUMMARY -----")
+summary(MOD1)
+print("----- ANOVA -----")
+anova(MOD1)
+
+```
+
+Looks like NPP is a significant predictor of DVM biomass!
