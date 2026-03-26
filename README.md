@@ -21,6 +21,7 @@ Zooplankton_SAA_Comparison....rmd compares the source amino acid d15N values obs
 AA-CSIA_....xlsx data files are all data from previously published studies.
 
 All zooplankton and particle data used in this study can be found in the Data folder. Within that folder:
+
 AA-CSIA_ALOHA.xlsx, AA-CSIA_ALOHA_Summer.xlsx, and AA-CSIA_ALOHA_Winter.xlsx contain AA-CSIA data from Station ALOHA that was originally published in Hannides et al. (2013, 2020). They were originally published as the average d15N values of Ser, Gly, Phe, and Lys. The entire data set is now available here, and also as part of Miller et al. (in Revision; https://doi.org/10.1016/j.dsr.2025.104597).
 AA-CSIA_5N.xlsx and AA-CSIA_8N.xlsx contain AA-CSIA data from the Equatorial Pacific that was originally published in Romero-romero et al. (2020), again as the average d15N values of Ser, Gly, Phe, and Lys. The entire data set is now available here.
 AA-CSIA_OSP.xlsx contains AA-CSIA data from Ocean Station Papa that was originally published in Shea et al. (2023) and Wojtal et al. (2023).
